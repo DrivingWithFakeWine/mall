@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  profiles:
+    active: local,dev
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/doro_mall?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          secret-key: doroshop-jwt-secret-at-least-32-chars!!
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true      # 下划线转驼峰（MP 默认开启，显式写出心里有数）
+  global-config:
+    banner: true
+    db-config:
+      id-type: assign_id                    # 雪花 ID（全局默认，实体可不再标 @TableId 类型）
+      logic-delete-field: deleted           # 全局逻辑删除字段名
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+

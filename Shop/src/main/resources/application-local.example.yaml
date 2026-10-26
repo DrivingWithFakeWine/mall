@@ -1,0 +1,5 @@
+# 复制此文件为 application-local.yaml 并填入你自己的密码（该文件已被 .gitignore 忽略）
+spring:
+  datasource:
+    username: root
+    password: 你的数据库密码
