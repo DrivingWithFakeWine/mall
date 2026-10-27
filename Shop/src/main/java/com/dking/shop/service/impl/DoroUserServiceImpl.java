@@ -39,8 +39,8 @@ public class DoroUserServiceImpl  implements DoroUserService {
         doroUser.setNickName(dto.getNickname());
         doroUser.setTelephone(dto.getTelephone());
         doroUser.setPassword(passwordEncoder.encode(dto.getPassword()));
-        doroUser.setRole(0);  // 非管理员
-        doroUser.setStatus(0);  // 非封禁
+        doroUser.setRole(1);  // 非管理
+        doroUser.setStatus(1);  // 非封禁
         doroUserMapper.insert(doroUser);
         log.info("用户注册成功, userId={}, username={}", doroUser.getUserId(), doroUser.getUserName());
     }
@@ -55,7 +55,7 @@ public class DoroUserServiceImpl  implements DoroUserService {
             log.warn("登录失败, username={}, 原因: 用户名或密码错误", dto.getUsername());
             throw new BusinessException("用户名或密码错误");
         }
-        if (user.getStatus() == 1) {
+        if (user.getStatus() == 0) {
             throw new BusinessException("账号已被封禁");
         }
 

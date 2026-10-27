@@ -3,6 +3,15 @@
 > 目标：完整走一遍真实项目生命周期 —— 设计 → 单体开发 → 部署 → 压测暴露瓶颈 → 分布式改造 → 高并发
 > 方法论：每引入一个中间件，先压测记录基线 → 改造 → 再压测对比，用数据证明每步演进的价值
 
+## 概要（30 秒版）
+
+- **目标**：单体 → 部署 → 压测 → 分布式演进 → 高并发，痛点为驱动
+- **业务**：在线商城 + 秒杀（用户 / 商品 SPU+SKU / 购物车 / 订单 / 库存 / 秒杀）
+- **技术**：JDK 25 + Spring Boot 4.1.1 + MySQL 8 + MyBatis-Plus；React 19 + AntD 6；jjwt 签发 + OAuth2 Resource Server 校验
+- **当前进度**（2026-10-26）：用户模块闭环（注册/登录/JWT）；下一步商品模块建表
+- **决策细节与待定项**：见 `DECISIONS.md`（改表 / 改架构 / 升依赖前必读）
+- **阶段四演进顺序**：Redis 缓存 → Redis 秒杀扣减 → MQ 削峰 → 分库分表 → 微服务 → Sentinel → 分布式事务 → 集群 → 链路追踪
+
 ## 业务场景：在线商城（含秒杀）
 
 | 模块 | 功能点 | 演进中的角色 |
@@ -30,7 +39,7 @@
 **前端（前后端分离，双前端工程，2026-10-23 确认）**
 - 技术栈：React 19 + TypeScript 6 + Vite 8 + Ant Design 6 + Axios（React Router、Zustand 到多页面/全局态时再装）
 - `shop-web` 用户端商城：浏览、购物车、下单、秒杀（2026-10-23 脚手架完成，已配 /api→8080 开发代理，构建通过）
-- `shop-admin` 管理端：商品上下架、秒杀活动管理（对应用户表 `role` 字段：0 管理员 / 1 普通用户）
+- `shop-admin` 管理端：商品上下架、秒杀活动管理（对应用户表 `role` 字段，取值见 DECISIONS.md）
 - 开发期前端走 Vite 代理调后端；部署期 Nginx 统一反代（阶段二）
 
 **工程环境记录（2026-10-23 已搭建，Spring Boot 已启动成功）**
@@ -38,7 +47,7 @@
 - 构建工具：Maven 3.9.x（注意：Maven 4.x 与 IDEA 集成不兼容；settings.xml 配阿里云镜像防依赖下载断流）
 - Initializr 勾选依赖：Spring Web、Spring Security、MySQL Driver、Validation、Lombok、Spring Boot Actuator
 - 手动引入的依赖：MyBatis-Plus（boot4 starter）、SpringDoc OpenAPI、jjwt
-- 刻意不选：OAuth2 Client、OAuth2 Resource Server（JWT 单体走 jjwt 路线，Resource Server 留到微服务网关阶段）；Spring Data Redis、RabbitMQ 等到压测暴露瓶颈后再引入
+- 刻意不选：OAuth2 Client；Spring Data Redis、RabbitMQ 等到压测暴露瓶颈后再引入。（OAuth2 Resource Server 已于 2026-10-26 手动引入用于 JWT 校验，见 DECISIONS.md）
 - 启动日志出现 "Using generated security password" 属正常：默认 Basic 认证兜底，写好 SecurityFilterChain 后自动消失
 
 **架构原则（单体阶段就要做对的）**
