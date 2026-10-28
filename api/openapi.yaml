@@ -1,0 +1,334 @@
+openapi: 3.0.3
+info:
+  title: DoroShop API
+  description: |
+    DoroShop 商城前后端接口契约（唯一真相）。
+    修改本文件必须走 PR 评审，前后端同步更新；破坏性变更走 /v2 或新增版本。
+  version: 1.0.0
+  license:
+    name: 仅供学习使用
+servers:
+  - url: http://localhost:8080
+    description: 本地开发
+security: []
+# 说明：当前商品/分类接口均为公开（security: []）。
+# 后续订单、秒杀等需登录的接口将在各自 operation 上声明 bearerAuth。
+tags:
+  - name: Category
+    description: 商品分类
+  - name: Product
+    description: 商品（SPU/SKU）
+
+paths:
+  /category/tree:
+    get:
+      tags: [Category]
+      summary: 分类树（一级分类 + 二级子分类）
+      description: 仅返回启用且未删除的分类，按 sort 升序；一级分类无论有无子分类都返回。
+      operationId: getCategoryTree
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCategoryTree'
+              example:
+                code: 200
+                message: success
+                data:
+                  - id: '1900000000000000001'
+                    name: 数码
+                    sort: 1
+                    children:
+                      - { id: '1900000000000000011', name: 手机, sort: 1, children: [] }
+                      - { id: '1900000000000000012', name: 耳机, sort: 2, children: [] }
+                  - id: '1900000000000000002'
+                    name: 服饰
+                    sort: 2
+                    children:
+                      - { id: '1900000000000000021', name: 男装, sort: 1, children: [] }
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /product/list:
+    get:
+      tags: [Product]
+      summary: 商品列表（分页 + 分类筛选）
+      description: |
+        仅返回上架商品（status=1，未删除）。传一级分类 id 时包含其下二级分类的商品。
+        列表不返回 detail 大字段。
+      operationId: getProductList
+      parameters:
+        - name: page
+          in: query
+          description: 页码，从 1 开始
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: size
+          in: query
+          description: 每页条数
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: categoryId
+          in: query
+          description: 分类 id（一级或二级），不传则全部
+          schema: { type: string }
+          example: '1900000000000000011'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProductPage'
+              example:
+                code: 200
+                message: success
+                data:
+                  total: 2
+                  records:
+                    - id: '1910000000000000001'
+                      name: iPhone 17
+                      subtitle: A19 芯片 · 全新影像系统
+                      mainImage: /images/spu/iphone17-main.jpg
+                      priceMin: 5999.00
+                      sales: 1200
+                    - id: '1910000000000000002'
+                      name: 小米 15
+                      subtitle: 骁龙旗舰 · 徕卡影像
+                      mainImage: /images/spu/xiaomi15-main.jpg
+                      priceMin: 3999.00
+                      sales: 860
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /product/{id}:
+    get:
+      tags: [Product]
+      summary: 商品详情（SPU + 图片 + 规格 + SKU）
+      description: |
+        仅返回上架商品的详情。skus 只包含上架 SKU（status=1），并带上可用库存；
+        availableStock=0 表示售罄，前端应置灰不可选。
+      operationId: getProductDetail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: SPU id
+          schema: { type: string }
+          example: '1910000000000000001'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProductDetail'
+              example:
+                code: 200
+                message: success
+                data:
+                  spu:
+                    id: '1910000000000000001'
+                    name: iPhone 17
+                    subtitle: A19 芯片 · 全新影像系统
+                    detail: 6.3 英寸屏幕，A19 芯片，4800 万像素双摄。
+                    priceMin: 5999.00
+                    sales: 1200
+                  images:
+                    - { id: '1940000000000000001', url: /images/spu/iphone17-main.jpg, isMain: 1, skuId: null }
+                    - { id: '1940000000000000004', url: /images/sku/iphone17-black.jpg, isMain: 1, skuId: '1920000000000000001' }
+                  specs:
+                    - id: '1950000000000000001'
+                      name: 颜色
+                      values:
+                        - { id: '1960000000000000001', value: 黑色 }
+                        - { id: '1960000000000000002', value: 白色 }
+                    - id: '1950000000000000002'
+                      name: 容量
+                      values:
+                        - { id: '1960000000000000003', value: 128G }
+                        - { id: '1960000000000000004', value: 256G }
+                  skus:
+                    - id: '1920000000000000001'
+                      specDesc: 黑色/128G
+                      image: /images/sku/iphone17-black.jpg
+                      price: 5999.00
+                      originalPrice: 6499.00
+                      availableStock: 98
+                    - id: '1920000000000000004'
+                      specDesc: 白色/256G
+                      image: /images/sku/iphone17-white.jpg
+                      price: 6799.00
+                      originalPrice: 7299.00
+                      availableStock: 0
+        '404':
+          description: 商品不存在或已下架
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+components:
+  schemas:
+    CategoryVO:
+      type: object
+      required: [id, name, sort, children]
+      properties:
+        id:
+          type: string
+          description: 分类 id（雪花 id，字符串传输防止 JS 精度丢失）
+          example: '1900000000000000011'
+        name: { type: string, example: 手机 }
+        sort: { type: integer, example: 1 }
+        children:
+          type: array
+          description: 子分类；一级分类无子分类时为空数组
+          items: { $ref: '#/components/schemas/CategoryVO' }
+
+    ProductListItem:
+      type: object
+      required: [id, name, priceMin, sales]
+      properties:
+        id: { type: string, example: '1910000000000000001' }
+        name: { type: string, example: iPhone 17 }
+        subtitle:
+          type: string
+          nullable: true
+          example: A19 芯片 · 全新影像系统
+        mainImage:
+          type: string
+          nullable: true
+          description: 主图 URL（相对路径），图片缺失时前端显示占位块
+          example: /images/spu/iphone17-main.jpg
+        priceMin:
+          type: number
+          format: double
+          description: 最低售价（元）。前端仅展示，不参与金额计算
+          example: 5999.00
+        sales: { type: integer, example: 1200 }
+
+    ProductPage:
+      type: object
+      required: [total, records]
+      properties:
+        total: { type: integer, description: 满足条件的总条数, example: 2 }
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/ProductListItem' }
+
+    ProductSpuVO:
+      type: object
+      required: [id, name, priceMin, sales]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        subtitle: { type: string, nullable: true }
+        detail:
+          type: string
+          nullable: true
+          description: 富文本/长文本详情，仅详情接口返回
+        priceMin: { type: number, format: double }
+        sales: { type: integer }
+
+    ProductImageVO:
+      type: object
+      required: [id, url, isMain]
+      properties:
+        id: { type: string }
+        url: { type: string }
+        isMain: { type: integer, description: '1 主图，0 非主图' }
+        skuId:
+          type: string
+          nullable: true
+          description: 为空表示 SPU 通用图（轮播）；非空表示该 SKU 专属图
+
+    ProductSpecValueVO:
+      type: object
+      required: [id, value]
+      properties:
+        id: { type: string }
+        value: { type: string, example: 黑色 }
+
+    ProductSpecVO:
+      type: object
+      required: [id, name, values]
+      properties:
+        id: { type: string }
+        name: { type: string, example: 颜色 }
+        values:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSpecValueVO' }
+
+    ProductSkuVO:
+      type: object
+      required: [id, specDesc, price, availableStock]
+      properties:
+        id: { type: string }
+        specDesc: { type: string, example: 黑色/128G }
+        image:
+          type: string
+          nullable: true
+        price: { type: number, format: double }
+        originalPrice:
+          type: number
+          format: double
+          nullable: true
+        availableStock:
+          type: integer
+          description: 可用库存；为 0 时前端置灰不可选
+
+    ProductDetail:
+      type: object
+      required: [spu, images, specs, skus]
+      properties:
+        spu: { $ref: '#/components/schemas/ProductSpuVO' }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/ProductImageVO' }
+        specs:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSpecVO' }
+        skus:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSkuVO' }
+
+    ApiCategoryTree:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/CategoryVO' }
+
+    ApiProductPage:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/ProductPage' }
+
+    ApiProductDetail:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/ProductDetail' }
+
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 404 }
+        message: { type: string, example: 商品不存在 }
