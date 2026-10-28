@@ -66,10 +66,169 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cart/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 加入购物车（同一 SKU 累加数量）
+         * @description 需登录。校验 SKU 存在、已上架、可用库存充足；
+         *     同一用户对同一 SKU 重复加购时累加数量（受库存与单次上限约束）。
+         */
+        post: operations["addCartItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cart/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 购物车列表（含商品信息与失效标记）
+         * @description 需登录。每项包含商品快照信息（名称、规格、价格、库存）；
+         *     商品下架或库存不足时 invalid=true，前端应提示且不允许结算。
+         */
+        get: operations["getCartList"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cart/quantity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改购物车项数量 */
+        put: operations["updateCartQuantity"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cart/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 勾选 / 取消勾选购物车项 */
+        put: operations["updateCartSelected"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cart/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除购物车项 */
+        delete: operations["deleteCartItem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CartAddDTO: {
+            /**
+             * @description SKU id
+             * @example 1920000000000000001
+             */
+            skuId: string;
+            /** @default 1 */
+            quantity: number;
+        };
+        CartQuantityDTO: {
+            /**
+             * @description 购物车项 id
+             * @example 1980000000000000001
+             */
+            id: string;
+            quantity: number;
+        };
+        CartSelectDTO: {
+            /** @description 购物车项 id */
+            id: string;
+            /**
+             * @description 1 勾选结算，0 取消勾选
+             * @enum {integer}
+             */
+            selected: 0 | 1;
+        };
+        CartItemVO: {
+            /** @description 购物车项 id */
+            id: string;
+            skuId: string;
+            spuId: string;
+            /** @description 商品名称（快照展示用） */
+            name: string;
+            /** @description 规格描述，如"黑色/128G" */
+            specDesc: string;
+            image?: string | null;
+            /**
+             * Format: double
+             * @description 当前售价（仅供参考，结算以后端为准）
+             */
+            price: number;
+            quantity: number;
+            /** @enum {integer} */
+            selected: 0 | 1;
+            /** @description 当前可用库存 */
+            availableStock: number;
+            /** @description true 表示商品已下架或库存不足，不可结算 */
+            invalid: boolean;
+        };
+        CartListVO: {
+            items: components["schemas"]["CartItemVO"][];
+        };
+        ApiCartList: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["CartListVO"];
+        };
+        ApiVoid: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: Record<string, never> | null;
+        };
         CategoryVO: {
             /**
              * @description 分类 id（雪花 id，字符串传输防止 JS 精度丢失）
@@ -253,6 +412,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApiCategoryTree"];
                 };
             };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     getProductList: {
@@ -308,6 +476,15 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["ApiProductPage"];
+                };
+            };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -415,6 +592,255 @@ export interface operations {
                 };
             };
             /** @description 商品不存在或已下架 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    addCartItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "skuId": "1920000000000000001",
+                 *       "quantity": 1
+                 *     }
+                 */
+                "application/json": components["schemas"]["CartAddDTO"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 参数错误、SKU 已下架或库存不足 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getCartList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 200,
+                     *       "message": "success",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "id": "1980000000000000001",
+                     *             "skuId": "1920000000000000001",
+                     *             "spuId": "1910000000000000001",
+                     *             "name": "iPhone 17",
+                     *             "specDesc": "黑色/128G",
+                     *             "image": "/images/sku/iphone17-black.jpg",
+                     *             "price": 5999,
+                     *             "quantity": 2,
+                     *             "selected": 1,
+                     *             "availableStock": 98,
+                     *             "invalid": false
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ApiCartList"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateCartQuantity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "id": "1980000000000000001",
+                 *       "quantity": 3
+                 *     }
+                 */
+                "application/json": components["schemas"]["CartQuantityDTO"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 参数错误或数量超出库存 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 购物车项不存在或不属于当前用户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateCartSelected: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "id": "1980000000000000001",
+                 *       "selected": 1
+                 *     }
+                 */
+                "application/json": components["schemas"]["CartSelectDTO"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteCartItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description 购物车项 id
+                 * @example 1980000000000000001
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 购物车项不存在或不属于当前用户 */
             404: {
                 headers: {
                     [name: string]: unknown;

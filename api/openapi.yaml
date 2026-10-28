@@ -18,6 +18,8 @@ tags:
     description: 商品分类
   - name: Product
     description: 商品（SPU/SKU）
+  - name: Cart
+    description: 购物车（需登录）
 
 paths:
   /category/tree:
@@ -176,8 +178,286 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
 
+  /cart/add:
+    post:
+      tags: [Cart]
+      summary: 加入购物车（同一 SKU 累加数量）
+      description: |
+        需登录。校验 SKU 存在、已上架、可用库存充足；
+        同一用户对同一 SKU 重复加购时累加数量（受库存与单次上限约束）。
+      operationId: addCartItem
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartAddDTO'
+            example:
+              skuId: '1920000000000000001'
+              quantity: 1
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 参数错误、SKU 已下架或库存不足
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /cart/list:
+    get:
+      tags: [Cart]
+      summary: 购物车列表（含商品信息与失效标记）
+      description: |
+        需登录。每项包含商品快照信息（名称、规格、价格、库存）；
+        商品下架或库存不足时 invalid=true，前端应提示且不允许结算。
+      operationId: getCartList
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiCartList' }
+              example:
+                code: 200
+                message: success
+                data:
+                  items:
+                    - id: '1980000000000000001'
+                      skuId: '1920000000000000001'
+                      spuId: '1910000000000000001'
+                      name: iPhone 17
+                      specDesc: 黑色/128G
+                      image: /images/sku/iphone17-black.jpg
+                      price: 5999.00
+                      quantity: 2
+                      selected: 1
+                      availableStock: 98
+                      invalid: false
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /cart/quantity:
+    put:
+      tags: [Cart]
+      summary: 修改购物车项数量
+      operationId: updateCartQuantity
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartQuantityDTO'
+            example:
+              id: '1980000000000000001'
+              quantity: 3
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 参数错误或数量超出库存
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 购物车项不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /cart/select:
+    put:
+      tags: [Cart]
+      summary: 勾选 / 取消勾选购物车项
+      operationId: updateCartSelected
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartSelectDTO'
+            example:
+              id: '1980000000000000001'
+              selected: 1
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /cart/{id}:
+    delete:
+      tags: [Cart]
+      summary: 删除购物车项
+      operationId: deleteCartItem
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 购物车项 id
+          schema: { type: string }
+          example: '1980000000000000001'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 购物车项不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "登录接口返回的 accessToken，请求头格式 Authorization: Bearer <token>"
   schemas:
+    CartAddDTO:
+      type: object
+      required: [skuId, quantity]
+      properties:
+        skuId:
+          type: string
+          description: SKU id
+          example: '1920000000000000001'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+          default: 1
+
+    CartQuantityDTO:
+      type: object
+      required: [id, quantity]
+      properties:
+        id:
+          type: string
+          description: 购物车项 id
+          example: '1980000000000000001'
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+
+    CartSelectDTO:
+      type: object
+      required: [id, selected]
+      properties:
+        id:
+          type: string
+          description: 购物车项 id
+        selected:
+          type: integer
+          enum: [0, 1]
+          description: 1 勾选结算，0 取消勾选
+
+    CartItemVO:
+      type: object
+      required: [id, skuId, spuId, name, specDesc, price, quantity, selected, availableStock, invalid]
+      properties:
+        id:
+          type: string
+          description: 购物车项 id
+        skuId: { type: string }
+        spuId:
+          type: string
+          description: 所属 SPU id，前端用于从购物车跳转商品详情页
+        name:
+          type: string
+          description: 商品名称（快照展示用）
+        specDesc:
+          type: string
+          description: 规格描述，如"黑色/128G"
+        image:
+          type: string
+          nullable: true
+        price:
+          type: number
+          format: double
+          description: 当前售价（仅供参考，结算以后端为准）
+        quantity:
+          type: integer
+        selected:
+          type: integer
+          enum: [0, 1]
+        availableStock:
+          type: integer
+          description: 当前可用库存
+        invalid:
+          type: boolean
+          description: true 表示商品已下架或库存不足，不可结算
+
+    CartListVO:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CartItemVO' }
+
+    ApiCartList:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/CartListVO' }
+
+    ApiVoid:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data:
+          type: object
+          nullable: true
+
     CategoryVO:
       type: object
       required: [id, name, sort, children]
