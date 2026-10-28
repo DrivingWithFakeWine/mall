@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Empty, Pagination, Spin, message } from 'antd'
 import CategoryMenu from '../components/CategoryMenu'
 import ProductCard from '../components/ProductCard'
+import { Link } from 'react-router-dom'
 import { getProductList, type ProductListItem } from '../api/product'
 import './Home.css'
 
@@ -44,7 +45,10 @@ export default function Home() {
 
     return (
         <div className="home-page">
-            <header className="home-header">DoroShop</header>
+            <header className="home-header">
+                <span>DoroShop</span>
+                <Link to="/cart" style={{ marginLeft: 'auto', fontSize: 14 }}>购物车</Link>
+            </header>
             <div className="home-body">
                 <aside className="home-sidebar">
                     {loading ? (
