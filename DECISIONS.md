@@ -100,6 +100,7 @@
 1. `shop-admin` 管理端工程尚未创建
 2. 商品详情是否拆独立表（当前留在 `product_spu`，靠列表查询不查该列来规避大字段）
 3. **多商家迭代（后续阶段）**：`merchant` 表字段、商家账号模型（`doro_user.merchant_id` vs 独立账号体系）、商家后台工程
+4. **已知并发缺陷（留待压测验证后修复）**：`CartServiceImpl.add` 使用"读-改-写"（selectOne + updateById），并发加购同一 SKU 会丢更新；`updateQuantity` 的库存校验存在 TOCTOU（可接受，下单为最终防线）。计划：压测阶段先复现数据不一致，再改为 SQL 原子累加作为改造案例
 
 ## 6. 仓库与环境 ✅
 

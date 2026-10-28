@@ -111,3 +111,16 @@ CREATE TABLE `product_sku_spec` (
                                     UNIQUE KEY `uk_sku_value` (`sku_id`, `spec_value_id`),
                                     KEY `idx_value` (`spec_value_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SKU与规格值关联';
+
+CREATE TABLE `cart` (
+                        `id`          BIGINT   NOT NULL COMMENT '主键（雪花ID）',
+                        `user_id`     BIGINT   NOT NULL COMMENT '所属用户id',
+                        `sku_id`      BIGINT   NOT NULL COMMENT 'SKU id',
+                        `quantity`    INT      NOT NULL DEFAULT 1 COMMENT '数量',
+                        `selected`    TINYINT  NOT NULL DEFAULT 1 COMMENT '是否勾选结算 1是 0否',
+                        `create_time` DATETIME NOT NULL COMMENT '创建时间',
+                        `update_time` DATETIME NOT NULL COMMENT '更新时间',
+                        PRIMARY KEY (`id`),
+                        UNIQUE KEY `uk_user_sku` (`user_id`, `sku_id`),
+                        KEY `idx_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='购物车';
