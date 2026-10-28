@@ -1,43 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { Button, Empty, Spin, Tag, message } from 'antd'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Button, Empty, InputNumber, Spin, Tag, message } from 'antd'
 import { getProductDetail, type ProductDetail } from '../api/product'
+import { addToCart } from '../api/cart'
+import ImageBox from '../components/ImageBox'
 import './ProductDetail.css'
-
-interface ImageBoxProps {
-    src?: string | null
-    label: string
-    className?: string
-}
-
-/** 图片不存在或加载失败时显示渐变占位块，避免裂图 */
-function ImageBox({ src, label, className }: ImageBoxProps) {
-    const [failed, setFailed] = useState(false)
-
-    useEffect(() => {
-        setFailed(false)
-    }, [src])
-
-    if (!src || failed) {
-        return <div className={`image-placeholder ${className ?? ''}`}>{label.slice(0, 1)}</div>
-    }
-    return (
-        <img
-            className={className}
-            src={src}
-            alt={label}
-            onError={() => setFailed(true)}
-        />
-    )
-}
 
 export default function ProductDetailPage() {
     const { id } = useParams<{ id: string }>()
+    const navigate = useNavigate()
     const [detail, setDetail] = useState<ProductDetail>()
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string>()
     const [selected, setSelected] = useState<Record<string, string>>({})
     const [activeImage, setActiveImage] = useState(0)
+    const [quantity, setQuantity] = useState(1)
+    const [adding, setAdding] = useState(false)
 
     useEffect(() => {
         if (!id) return
@@ -87,6 +65,33 @@ export default function ProductDetailPage() {
         setActiveImage(0)
     }, [images])
 
+    // 切换规格后数量回到 1
+    useEffect(() => {
+        setQuantity(1)
+    }, [currentSku?.id])
+
+    const handleAddToCart = async () => {
+        if (!currentSku) return
+        if (quantity > currentSku.availableStock) {
+            message.warning(`库存不足，当前仅剩 ${currentSku.availableStock} 件`)
+            return
+        }
+        if (!localStorage.getItem('token')) {
+            message.warning('请先登录')
+            navigate('/login')
+            return
+        }
+        setAdding(true)
+        try {
+            await addToCart(currentSku.id, quantity)
+            message.success('已加入购物车')
+        } catch (e) {
+            message.error((e as Error).message || '加入购物车失败')
+        } finally {
+            setAdding(false)
+        }
+    }
+
     if (loading) {
         return <div className="detail-loading"><Spin size="large" /></div>
     }
@@ -110,6 +115,7 @@ export default function ProductDetailPage() {
             <header className="detail-header">
                 <Link to="/home">← 返回</Link>
                 <span className="detail-brand">DoroShop</span>
+                <Link to="/cart" style={{ marginLeft: 'auto', fontSize: 14 }}>购物车</Link>
             </header>
 
             <div className="detail-body">
@@ -174,12 +180,24 @@ export default function ProductDetailPage() {
                         )}
                     </div>
 
+                    <div className="detail-quantity">
+                        <span>数量</span>
+                        <InputNumber
+                            min={1}
+                            max={Math.min(99, currentSku?.availableStock ?? 99)}
+                            value={quantity}
+                            onChange={value => setQuantity(value ?? 1)}
+                            disabled={!currentSku || soldOut}
+                        />
+                    </div>
+
                     <Button
                         type="primary"
                         size="large"
                         block
+                        loading={adding}
                         disabled={!currentSku || soldOut}
-                        onClick={() => message.info('购物车功能开发中')}
+                        onClick={handleAddToCart}
                     >
                         {soldOut ? '已售罄' : '加入购物车'}
                     </Button>

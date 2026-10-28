@@ -31,5 +31,6 @@
 }
 .spec-value.active { border-color: #1677ff; color: #1677ff; }
 .detail-stock { margin: 20px 0; color: #666; }
+.detail-quantity { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; color: #666; }
 .detail-rich { background: #fff; margin: 0 24px; padding: 24px; border-radius: 8px; }
 .detail-rich h2 { font-size: 18px; margin-top: 0; }
