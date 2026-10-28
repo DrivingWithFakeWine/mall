@@ -19,7 +19,7 @@
 |------|------------|---------|
 | JDK | 25（Dragonwell 25.0.4，路径 `C:\Users\14265\.jdks\dragonwell-ex-25.0.4`） | 命令行 Maven 默认 `JAVA_HOME` 指向 **JDK 17**，CLI 编译需临时指定 JDK 25；IDEA 内不受影响 |
 | Spring Boot | 4.1.1 | Boot 4 默认 **Jackson 3**（包名 `tools.jackson`），网上 Boot 3 教程的 `com.fasterxml.jackson` 写法不适用 |
-| MyBatis-Plus | `mybatis-plus-spring-boot4-starter` **3.5.18** | 必须用 boot4 starter，普通 starter 自动配置失效 |
+| MyBatis-Plus | `mybatis-plus-spring-boot4-starter` **3.5.18** + `mybatis-plus-jsqlparser` **3.5.18** | 必须用 boot4 starter；**3.5.9+ 起分页插件 `PaginationInnerInterceptor` 拆到 jsqlparser 模块**，不加依赖会编译报找不到符号 |
 | springdoc | 3.2.0 | 3.x 才支持 Boot 4 |
 | jjwt | 0.13.0（api/impl/jackson 三件套） | 密钥 ≥32 字符，否则 WeakKeyException |
 | 前端 | React 19 + TS 6 + Vite 8 + AntD 6 + Axios + react-router-dom | |
