@@ -16,6 +16,12 @@ public class GlobalExceptionHandler {
         return Result.error(400, e.getMessage());
     }
 
+    // 资源不存在
+    @ExceptionHandler(NotFoundException.class)
+    public Result<Void> handleNotFound(NotFoundException e) {
+        return Result.error(404, e.getMessage());
+    }
+
     // 参数校验异常
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public Result<Void> handleValid(MethodArgumentNotValidException e) {

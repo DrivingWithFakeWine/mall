@@ -3,9 +3,11 @@ package com.dking.shop.controller;
 import com.dking.shop.common.Result;
 import com.dking.shop.service.ProductService;
 import com.dking.shop.vo.PageVO;
+import com.dking.shop.vo.ProductDetailVO;
 import com.dking.shop.vo.ProductListItemVO;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,5 +25,10 @@ public class ProductController {
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) Long categoryId) {
         return Result.success(productService.list(page, size, categoryId));
+    }
+
+    @GetMapping("/{id}")
+    public Result<ProductDetailVO> detail(@PathVariable Long id) {
+        return Result.success(productService.detail(id));
     }
 }
