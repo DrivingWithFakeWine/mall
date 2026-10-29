@@ -20,6 +20,10 @@ tags:
     description: 商品（SPU/SKU）
   - name: Cart
     description: 购物车（需登录）
+  - name: Order
+    description: 订单（需登录）
+  - name: Address
+    description: 收货地址（需登录）
 
 paths:
   /category/tree:
@@ -349,6 +353,428 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
+  /order/confirm:
+    get:
+      tags: [Order]
+      summary: 结算确认（选中商品 + 默认地址 + 合计）
+      description: |
+        需登录。读取当前用户购物车中 selected=1 且未失效的商品；
+        无选中商品时返回业务码 400。address 为 null 表示用户尚未添加收货地址。
+      operationId: confirmOrder
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiOrderConfirm' }
+              example:
+                code: 200
+                message: success
+                data:
+                  totalAmount: 17997.00
+                  address:
+                    id: '2115000000000000001'
+                    receiverName: 张三
+                    receiverPhone: '13800138000'
+                    province: 北京市
+                    city: 北京市
+                    district: 海淀区
+                    detail: 中关村大街 1 号
+                    isDefault: 1
+                  items:
+                    - cartId: '2115423856867467265'
+                      skuId: '1920000000000000001'
+                      spuId: '1910000000000000001'
+                      name: iPhone 17
+                      specDesc: 黑色/128G
+                      image: /images/sku/iphone17-black.jpg
+                      price: 5999.00
+                      quantity: 3
+                      subtotal: 17997.00
+        '400':
+          description: 没有选中的商品
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /order/submit:
+    post:
+      tags: [Order]
+      summary: 提交订单
+      description: |
+        需登录。服务端以购物车勾选项为准计算金额（不信任客户端价格）：
+        校验地址与库存 → 扣减库存（available−n、locked+n）→ 生成订单/明细/地址快照 → 删除已下单购物车项，
+        全部在同一事务内完成。任一 SKU 库存不足则整体失败，已扣库存回滚。
+      operationId: submitOrder
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderSubmitDTO' }
+            example:
+              addressId: '2115000000000000001'
+              remark: 尽快发货
+      responses:
+        '200':
+          description: 下单成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiOrderSubmit' }
+              example:
+                code: 200
+                message: success
+                data:
+                  orderId: '2116000000000000001'
+                  orderNo: '202610291230001234'
+                  payAmount: 17997.00
+                  status: 0
+                  expireTime: '2026-10-29T13:30:00+08:00'
+        '400':
+          description: 无选中商品、地址不存在或库存不足
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /order/list:
+    get:
+      tags: [Order]
+      summary: 我的订单列表（分页 + 状态筛选）
+      description: |
+        需登录。仅返回当前用户的订单，按创建时间倒序。
+        status 为空表示全部；列表项只带首件商品快照与商品件数，不含完整明细。
+      operationId: listOrders
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: status
+          in: query
+          description: '0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消；不传为全部'
+          schema: { type: integer, enum: [0, 1, 2, 3, 4] }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiOrderPage' }
+              example:
+                code: 200
+                message: success
+                data:
+                  total: 1
+                  records:
+                    - id: '2115660222213730305'
+                      orderNo: '202610291221180117'
+                      status: 0
+                      payAmount: 17997.00
+                      createTime: '2026-10-29T12:21:18+08:00'
+                      firstItemName: iPhone 17
+                      firstItemImage: /images/sku/iphone17-black.jpg
+                      itemCount: 3
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /order/{id}:
+    get:
+      tags: [Order]
+      summary: 订单详情（订单 + 明细快照 + 地址快照）
+      operationId: getOrderDetail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          example: '2115660222213730305'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiOrderDetail' }
+              example:
+                code: 200
+                message: success
+                data:
+                  id: '2115660222213730305'
+                  orderNo: '202610291221180117'
+                  status: 0
+                  totalAmount: 17997.00
+                  payAmount: 17997.00
+                  remark: test order
+                  createTime: '2026-10-29T12:21:18+08:00'
+                  expireTime: '2026-10-29T12:51:18+08:00'
+                  payTime: null
+                  cancelTime: null
+                  items:
+                    - id: '2115660222213730306'
+                      spuId: '1910000000000000001'
+                      skuId: '1920000000000000001'
+                      productName: iPhone 17
+                      specDesc: 黑色/128G
+                      image: /images/sku/iphone17-black.jpg
+                      price: 5999.00
+                      quantity: 3
+                      totalAmount: 17997.00
+                  address:
+                    receiverName: 张三
+                    receiverPhone: '13800138000'
+                    province: 北京市
+                    city: 北京市
+                    district: 海淀区
+                    detail: 中关村大街 1 号
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 订单不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /order/{id}/pay:
+    post:
+      tags: [Order]
+      summary: 模拟支付
+      description: |
+        需登录。仅「待支付」订单可支付；成功后状态变为已支付并释放锁定库存
+        （locked_stock −= n，available 不变），同时累加商品销量。
+        重复支付返回 400「订单状态不允许支付」，不会产生副作用。
+      operationId: payOrder
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          example: '2115660222213730305'
+      responses:
+        '200':
+          description: 支付成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiOrderPay' }
+              example:
+                code: 200
+                message: success
+                data:
+                  orderId: '2115660222213730305'
+                  orderNo: '202610291221180117'
+                  payAmount: 17997.00
+                  status: 1
+                  payTime: '2026-10-29T12:30:00+08:00'
+        '400':
+          description: 订单状态不允许支付（已支付 / 已取消）或已超时
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 订单不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /order/{id}/cancel:
+    post:
+      tags: [Order]
+      summary: 取消订单（仅待支付）
+      description: |
+        仅「待支付」订单可取消。成功后状态变为已取消，并回滚库存
+        （available_stock += n、locked_stock −= n）。
+      operationId: cancelOrder
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          example: '2115660222213730305'
+      responses:
+        '200':
+          description: 取消成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 订单状态不允许取消
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 订单不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /address/list:
+    get:
+      tags: [Address]
+      summary: 收货地址列表
+      description: 返回当前用户全部地址，默认地址排在最前，其余按创建时间倒序。
+      operationId: listAddresses
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiAddressList' }
+              example:
+                code: 200
+                message: success
+                data:
+                  - id: '2115000000000000001'
+                    receiverName: 张三
+                    receiverPhone: '13800138000'
+                    province: 北京市
+                    city: 北京市
+                    district: 海淀区
+                    detail: 中关村大街 1 号
+                    isDefault: 1
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /address/add:
+    post:
+      tags: [Address]
+      summary: 新增收货地址
+      description: |
+        需登录。isDefault=1 时，同一事务内先清除该用户其它默认地址再设置本条；
+        最多允许 20 条地址，超出返回 400。
+      operationId: addAddress
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddressSaveDTO' }
+            example:
+              receiverName: 李四
+              receiverPhone: '13900139000'
+              province: 上海市
+              city: 上海市
+              district: 浦东新区
+              detail: 世纪大道 100 号
+              isDefault: 0
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 参数错误或地址数量已达上限
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /address/{id}:
+    put:
+      tags: [Address]
+      summary: 修改收货地址
+      description: 需登录，只能修改自己的地址；isDefault=1 时同样清理其它默认地址。
+      operationId: updateAddress
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          example: '2115000000000000001'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddressSaveDTO' }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 地址不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+    delete:
+      tags: [Address]
+      summary: 删除收货地址
+      description: 逻辑删除，只能删除自己的地址；删除默认地址后不自动补位（confirm 会回退到最新一条）。
+      operationId: deleteAddress
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          example: '2115000000000000001'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 地址不存在或不属于当前用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -357,6 +783,258 @@ components:
       bearerFormat: JWT
       description: "登录接口返回的 accessToken，请求头格式 Authorization: Bearer <token>"
   schemas:
+    AddressSaveDTO:
+      type: object
+      required: [receiverName, receiverPhone, province, city, district, detail, isDefault]
+      properties:
+        receiverName:
+          type: string
+          maxLength: 50
+          example: 张三
+        receiverPhone:
+          type: string
+          pattern: '^1[3-9]\d{9}$'
+          example: '13800138000'
+        province:
+          type: string
+          maxLength: 50
+          example: 北京市
+        city:
+          type: string
+          maxLength: 50
+          example: 北京市
+        district:
+          type: string
+          maxLength: 50
+          example: 海淀区
+        detail:
+          type: string
+          maxLength: 255
+          example: 中关村大街 1 号
+        isDefault:
+          type: integer
+          enum: [0, 1]
+          description: 1 设为默认地址（会清除其它默认），0 普通地址
+
+    ApiAddressList:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/UserAddressVO' }
+
+    OrderListItemVO:
+      type: object
+      required: [id, orderNo, status, payAmount, createTime, itemCount]
+      properties:
+        id: { type: string }
+        orderNo: { type: string, example: '202610291221180117' }
+        status:
+          type: integer
+          description: '0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消'
+        payAmount: { type: number, format: double }
+        createTime: { type: string, format: date-time }
+        firstItemName: { type: string, example: iPhone 17 }
+        firstItemImage: { type: string, nullable: true }
+        itemCount: { type: integer, description: 商品总件数 }
+
+    OrderItemVO:
+      type: object
+      required: [id, spuId, skuId, productName, specDesc, price, quantity, totalAmount]
+      properties:
+        id: { type: string }
+        spuId: { type: string }
+        skuId: { type: string }
+        productName: { type: string }
+        specDesc: { type: string }
+        image: { type: string, nullable: true }
+        price: { type: number, format: double, description: 下单时单价（快照） }
+        quantity: { type: integer }
+        totalAmount: { type: number, format: double }
+
+    OrderAddressVO:
+      type: object
+      required: [receiverName, receiverPhone, province, city, district, detail]
+      properties:
+        receiverName: { type: string }
+        receiverPhone: { type: string }
+        province: { type: string }
+        city: { type: string }
+        district: { type: string }
+        detail: { type: string }
+
+    OrderDetailVO:
+      type: object
+      required: [id, orderNo, status, totalAmount, payAmount, createTime, expireTime, items]
+      properties:
+        id: { type: string }
+        orderNo: { type: string }
+        status:
+          type: integer
+          description: '0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消'
+        totalAmount: { type: number, format: double }
+        payAmount: { type: number, format: double }
+        remark: { type: string, nullable: true }
+        createTime: { type: string, format: date-time }
+        expireTime: { type: string, format: date-time }
+        payTime: { type: string, format: date-time, nullable: true }
+        cancelTime: { type: string, format: date-time, nullable: true }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItemVO' }
+        address:
+          description: 订单收货地址快照
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/OrderAddressVO'
+
+    OrderPayVO:
+      type: object
+      required: [orderId, orderNo, payAmount, status, payTime]
+      properties:
+        orderId: { type: string }
+        orderNo: { type: string }
+        payAmount: { type: number, format: double }
+        status: { type: integer, example: 1 }
+        payTime: { type: string, format: date-time }
+
+    OrderPage:
+      type: object
+      required: [total, records]
+      properties:
+        total: { type: integer }
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/OrderListItemVO' }
+
+    ApiOrderPage:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/OrderPage' }
+
+    ApiOrderDetail:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/OrderDetailVO' }
+
+    ApiOrderPay:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/OrderPayVO' }
+
+    OrderSubmitDTO:
+      type: object
+      required: [addressId]
+      properties:
+        addressId:
+          type: string
+          description: 收货地址 id
+          example: '2115000000000000001'
+        remark:
+          type: string
+          maxLength: 255
+          nullable: true
+          description: 用户备注
+
+    UserAddressVO:
+      type: object
+      required: [id, receiverName, receiverPhone, province, city, district, detail, isDefault]
+      properties:
+        id: { type: string }
+        receiverName: { type: string, example: 张三 }
+        receiverPhone: { type: string, example: '13800138000' }
+        province: { type: string, example: 北京市 }
+        city: { type: string, example: 北京市 }
+        district: { type: string, example: 海淀区 }
+        detail: { type: string, example: 中关村大街 1 号 }
+        isDefault: { type: integer, description: '1 默认地址 0 普通地址' }
+
+    ConfirmItemVO:
+      type: object
+      required: [cartId, skuId, spuId, name, specDesc, price, quantity, subtotal]
+      properties:
+        cartId: { type: string, description: 购物车项 id }
+        skuId: { type: string }
+        spuId: { type: string }
+        name: { type: string }
+        specDesc: { type: string }
+        image: { type: string, nullable: true }
+        price:
+          type: number
+          format: double
+          description: 当前售价（提交订单时以服务端价格为准）
+        quantity: { type: integer }
+        subtotal:
+          type: number
+          format: double
+          description: price × quantity
+
+    OrderConfirmVO:
+      type: object
+      required: [items, totalAmount]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ConfirmItemVO' }
+        totalAmount:
+          type: number
+          format: double
+        address:
+          description: 默认收货地址；为 null 表示尚未添加
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/UserAddressVO'
+
+    OrderSubmitVO:
+      type: object
+      required: [orderId, orderNo, payAmount, status, expireTime]
+      properties:
+        orderId: { type: string }
+        orderNo:
+          type: string
+          description: 展示用订单号
+          example: '202610291230001234'
+        payAmount:
+          type: number
+          format: double
+        status:
+          type: integer
+          description: '0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消'
+        expireTime:
+          type: string
+          format: date-time
+          description: 支付截止时间
+
+    ApiOrderConfirm:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/OrderConfirmVO' }
+
+    ApiOrderSubmit:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/OrderSubmitVO' }
+
     CartAddDTO:
       type: object
       required: [skuId, quantity]

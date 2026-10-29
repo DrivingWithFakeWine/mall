@@ -159,10 +159,406 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/order/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 结算确认（选中商品 + 默认地址 + 合计）
+         * @description 需登录。读取当前用户购物车中 selected=1 且未失效的商品；
+         *     无选中商品时返回业务码 400。address 为 null 表示用户尚未添加收货地址。
+         */
+        get: operations["confirmOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/order/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 提交订单
+         * @description 需登录。服务端以购物车勾选项为准计算金额（不信任客户端价格）：
+         *     校验地址与库存 → 扣减库存（available−n、locked+n）→ 生成订单/明细/地址快照 → 删除已下单购物车项，
+         *     全部在同一事务内完成。任一 SKU 库存不足则整体失败，已扣库存回滚。
+         */
+        post: operations["submitOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/order/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的订单列表（分页 + 状态筛选）
+         * @description 需登录。仅返回当前用户的订单，按创建时间倒序。
+         *     status 为空表示全部；列表项只带首件商品快照与商品件数，不含完整明细。
+         */
+        get: operations["listOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/order/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 订单详情（订单 + 明细快照 + 地址快照） */
+        get: operations["getOrderDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/order/{id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 模拟支付
+         * @description 需登录。仅「待支付」订单可支付；成功后状态变为已支付并释放锁定库存
+         *     （locked_stock −= n，available 不变），同时累加商品销量。
+         *     重复支付返回 400「订单状态不允许支付」，不会产生副作用。
+         */
+        post: operations["payOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/order/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 取消订单（仅待支付）
+         * @description 仅「待支付」订单可取消。成功后状态变为已取消，并回滚库存
+         *     （available_stock += n、locked_stock −= n）。
+         */
+        post: operations["cancelOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/address/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 收货地址列表
+         * @description 返回当前用户全部地址，默认地址排在最前，其余按创建时间倒序。
+         */
+        get: operations["listAddresses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/address/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 新增收货地址
+         * @description 需登录。isDefault=1 时，同一事务内先清除该用户其它默认地址再设置本条；
+         *     最多允许 20 条地址，超出返回 400。
+         */
+        post: operations["addAddress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/address/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改收货地址
+         * @description 需登录，只能修改自己的地址；isDefault=1 时同样清理其它默认地址。
+         */
+        put: operations["updateAddress"];
+        post?: never;
+        /**
+         * 删除收货地址
+         * @description 逻辑删除，只能删除自己的地址；删除默认地址后不自动补位（confirm 会回退到最新一条）。
+         */
+        delete: operations["deleteAddress"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AddressSaveDTO: {
+            /** @example 张三 */
+            receiverName: string;
+            /** @example 13800138000 */
+            receiverPhone: string;
+            /** @example 北京市 */
+            province: string;
+            /** @example 北京市 */
+            city: string;
+            /** @example 海淀区 */
+            district: string;
+            /** @example 中关村大街 1 号 */
+            detail: string;
+            /**
+             * @description 1 设为默认地址（会清除其它默认），0 普通地址
+             * @enum {integer}
+             */
+            isDefault: 0 | 1;
+        };
+        ApiAddressList: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["UserAddressVO"][];
+        };
+        OrderListItemVO: {
+            id: string;
+            /** @example 202610291221180117 */
+            orderNo: string;
+            /** @description 0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消 */
+            status: number;
+            /** Format: double */
+            payAmount: number;
+            /** Format: date-time */
+            createTime: string;
+            /** @example iPhone 17 */
+            firstItemName?: string;
+            firstItemImage?: string | null;
+            /** @description 商品总件数 */
+            itemCount: number;
+        };
+        OrderItemVO: {
+            id: string;
+            spuId: string;
+            skuId: string;
+            productName: string;
+            specDesc: string;
+            image?: string | null;
+            /**
+             * Format: double
+             * @description 下单时单价（快照）
+             */
+            price: number;
+            quantity: number;
+            /** Format: double */
+            totalAmount: number;
+        };
+        OrderAddressVO: {
+            receiverName: string;
+            receiverPhone: string;
+            province: string;
+            city: string;
+            district: string;
+            detail: string;
+        };
+        OrderDetailVO: {
+            id: string;
+            orderNo: string;
+            /** @description 0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消 */
+            status: number;
+            /** Format: double */
+            totalAmount: number;
+            /** Format: double */
+            payAmount: number;
+            remark?: string | null;
+            /** Format: date-time */
+            createTime: string;
+            /** Format: date-time */
+            expireTime: string;
+            /** Format: date-time */
+            payTime?: string | null;
+            /** Format: date-time */
+            cancelTime?: string | null;
+            items: components["schemas"]["OrderItemVO"][];
+            /** @description 订单收货地址快照 */
+            address?: components["schemas"]["OrderAddressVO"] | null;
+        };
+        OrderPayVO: {
+            orderId: string;
+            orderNo: string;
+            /** Format: double */
+            payAmount: number;
+            /** @example 1 */
+            status: number;
+            /** Format: date-time */
+            payTime: string;
+        };
+        OrderPage: {
+            total: number;
+            records: components["schemas"]["OrderListItemVO"][];
+        };
+        ApiOrderPage: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["OrderPage"];
+        };
+        ApiOrderDetail: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["OrderDetailVO"];
+        };
+        ApiOrderPay: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["OrderPayVO"];
+        };
+        OrderSubmitDTO: {
+            /**
+             * @description 收货地址 id
+             * @example 2115000000000000001
+             */
+            addressId: string;
+            /** @description 用户备注 */
+            remark?: string | null;
+        };
+        UserAddressVO: {
+            id: string;
+            /** @example 张三 */
+            receiverName: string;
+            /** @example 13800138000 */
+            receiverPhone: string;
+            /** @example 北京市 */
+            province: string;
+            /** @example 北京市 */
+            city: string;
+            /** @example 海淀区 */
+            district: string;
+            /** @example 中关村大街 1 号 */
+            detail: string;
+            /** @description 1 默认地址 0 普通地址 */
+            isDefault: number;
+        };
+        ConfirmItemVO: {
+            /** @description 购物车项 id */
+            cartId: string;
+            skuId: string;
+            spuId: string;
+            name: string;
+            specDesc: string;
+            image?: string | null;
+            /**
+             * Format: double
+             * @description 当前售价（提交订单时以服务端价格为准）
+             */
+            price: number;
+            quantity: number;
+            /**
+             * Format: double
+             * @description price × quantity
+             */
+            subtotal: number;
+        };
+        OrderConfirmVO: {
+            items: components["schemas"]["ConfirmItemVO"][];
+            /** Format: double */
+            totalAmount: number;
+            /** @description 默认收货地址；为 null 表示尚未添加 */
+            address?: components["schemas"]["UserAddressVO"] | null;
+        };
+        OrderSubmitVO: {
+            orderId: string;
+            /**
+             * @description 展示用订单号
+             * @example 202610291230001234
+             */
+            orderNo: string;
+            /** Format: double */
+            payAmount: number;
+            /** @description 0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消 */
+            status: number;
+            /**
+             * Format: date-time
+             * @description 支付截止时间
+             */
+            expireTime: string;
+        };
+        ApiOrderConfirm: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["OrderConfirmVO"];
+        };
+        ApiOrderSubmit: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["OrderSubmitVO"];
+        };
         CartAddDTO: {
             /**
              * @description SKU id
@@ -193,6 +589,7 @@ export interface components {
             /** @description 购物车项 id */
             id: string;
             skuId: string;
+            /** @description 所属 SPU id，前端用于从购物车跳转商品详情页 */
             spuId: string;
             /** @description 商品名称（快照展示用） */
             name: string;
@@ -841,6 +1238,580 @@ export interface operations {
                 };
             };
             /** @description 购物车项不存在或不属于当前用户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    confirmOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 200,
+                     *       "message": "success",
+                     *       "data": {
+                     *         "totalAmount": 17997,
+                     *         "address": {
+                     *           "id": "2115000000000000001",
+                     *           "receiverName": "张三",
+                     *           "receiverPhone": "13800138000",
+                     *           "province": "北京市",
+                     *           "city": "北京市",
+                     *           "district": "海淀区",
+                     *           "detail": "中关村大街 1 号",
+                     *           "isDefault": 1
+                     *         },
+                     *         "items": [
+                     *           {
+                     *             "cartId": "2115423856867467265",
+                     *             "skuId": "1920000000000000001",
+                     *             "spuId": "1910000000000000001",
+                     *             "name": "iPhone 17",
+                     *             "specDesc": "黑色/128G",
+                     *             "image": "/images/sku/iphone17-black.jpg",
+                     *             "price": 5999,
+                     *             "quantity": 3,
+                     *             "subtotal": 17997
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ApiOrderConfirm"];
+                };
+            };
+            /** @description 没有选中的商品 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    submitOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "addressId": "2115000000000000001",
+                 *       "remark": "尽快发货"
+                 *     }
+                 */
+                "application/json": components["schemas"]["OrderSubmitDTO"];
+            };
+        };
+        responses: {
+            /** @description 下单成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 200,
+                     *       "message": "success",
+                     *       "data": {
+                     *         "orderId": "2116000000000000001",
+                     *         "orderNo": "202610291230001234",
+                     *         "payAmount": 17997,
+                     *         "status": 0,
+                     *         "expireTime": "2026-10-29T13:30:00+08:00"
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ApiOrderSubmit"];
+                };
+            };
+            /** @description 无选中商品、地址不存在或库存不足 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listOrders: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                /** @description 0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消；不传为全部 */
+                status?: 0 | 1 | 2 | 3 | 4;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 200,
+                     *       "message": "success",
+                     *       "data": {
+                     *         "total": 1,
+                     *         "records": [
+                     *           {
+                     *             "id": "2115660222213730305",
+                     *             "orderNo": "202610291221180117",
+                     *             "status": 0,
+                     *             "payAmount": 17997,
+                     *             "createTime": "2026-10-29T12:21:18+08:00",
+                     *             "firstItemName": "iPhone 17",
+                     *             "firstItemImage": "/images/sku/iphone17-black.jpg",
+                     *             "itemCount": 3
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ApiOrderPage"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getOrderDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example 2115660222213730305 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 200,
+                     *       "message": "success",
+                     *       "data": {
+                     *         "id": "2115660222213730305",
+                     *         "orderNo": "202610291221180117",
+                     *         "status": 0,
+                     *         "totalAmount": 17997,
+                     *         "payAmount": 17997,
+                     *         "remark": "test order",
+                     *         "createTime": "2026-10-29T12:21:18+08:00",
+                     *         "expireTime": "2026-10-29T12:51:18+08:00",
+                     *         "payTime": null,
+                     *         "cancelTime": null,
+                     *         "items": [
+                     *           {
+                     *             "id": "2115660222213730306",
+                     *             "spuId": "1910000000000000001",
+                     *             "skuId": "1920000000000000001",
+                     *             "productName": "iPhone 17",
+                     *             "specDesc": "黑色/128G",
+                     *             "image": "/images/sku/iphone17-black.jpg",
+                     *             "price": 5999,
+                     *             "quantity": 3,
+                     *             "totalAmount": 17997
+                     *           }
+                     *         ],
+                     *         "address": {
+                     *           "receiverName": "张三",
+                     *           "receiverPhone": "13800138000",
+                     *           "province": "北京市",
+                     *           "city": "北京市",
+                     *           "district": "海淀区",
+                     *           "detail": "中关村大街 1 号"
+                     *         }
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ApiOrderDetail"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 订单不存在或不属于当前用户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    payOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example 2115660222213730305 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 支付成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 200,
+                     *       "message": "success",
+                     *       "data": {
+                     *         "orderId": "2115660222213730305",
+                     *         "orderNo": "202610291221180117",
+                     *         "payAmount": 17997,
+                     *         "status": 1,
+                     *         "payTime": "2026-10-29T12:30:00+08:00"
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ApiOrderPay"];
+                };
+            };
+            /** @description 订单状态不允许支付（已支付 / 已取消）或已超时 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 订单不存在或不属于当前用户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cancelOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example 2115660222213730305 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取消成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 订单状态不允许取消 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 订单不存在或不属于当前用户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listAddresses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 200,
+                     *       "message": "success",
+                     *       "data": [
+                     *         {
+                     *           "id": "2115000000000000001",
+                     *           "receiverName": "张三",
+                     *           "receiverPhone": "13800138000",
+                     *           "province": "北京市",
+                     *           "city": "北京市",
+                     *           "district": "海淀区",
+                     *           "detail": "中关村大街 1 号",
+                     *           "isDefault": 1
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ApiAddressList"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    addAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "receiverName": "李四",
+                 *       "receiverPhone": "13900139000",
+                 *       "province": "上海市",
+                 *       "city": "上海市",
+                 *       "district": "浦东新区",
+                 *       "detail": "世纪大道 100 号",
+                 *       "isDefault": 0
+                 *     }
+                 */
+                "application/json": components["schemas"]["AddressSaveDTO"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 参数错误或地址数量已达上限 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example 2115000000000000001 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddressSaveDTO"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 地址不存在或不属于当前用户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example 2115000000000000001 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 地址不存在或不属于当前用户 */
             404: {
                 headers: {
                     [name: string]: unknown;
