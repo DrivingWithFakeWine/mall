@@ -1,22 +1,9 @@
 import request from './request'
+import { unwrap, type ApiResult } from './result'
 import type { components } from './schema'
 
 export type CartItemVO = components['schemas']['CartItemVO']
 export type CartListVO = components['schemas']['CartListVO']
-
-/** 后端统一样式：HTTP 恒为 200，业务结果在 code 里 */
-interface ApiResult<T> {
-    code: number
-    message: string
-    data: T
-}
-
-function unwrap<T>(res: { data: ApiResult<T> }): T {
-    if (res.data.code !== 200) {
-        throw new Error(res.data.message || '请求失败')
-    }
-    return res.data.data
-}
 
 export async function addToCart(skuId: string, quantity: number): Promise<void> {
     const res = await request.post<ApiResult<null>>('/api/cart/add', { skuId, quantity })
