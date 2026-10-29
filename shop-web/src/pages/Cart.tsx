@@ -76,6 +76,7 @@ export default function CartPage() {
             <header className="cart-header">
                 <Link to="/home">← 返回首页</Link>
                 <span className="cart-title">购物车</span>
+                <Link to="/orders" style={{ marginLeft: 'auto', fontSize: 14 }}>我的订单</Link>
             </header>
 
             <div className="cart-body">
@@ -134,7 +135,7 @@ export default function CartPage() {
                     type="primary"
                     size="large"
                     disabled={total <= 0}
-                    onClick={() => message.info('订单模块开发中')}
+                    onClick={() => navigate('/checkout')}
                 >
                     去结算
                 </Button>

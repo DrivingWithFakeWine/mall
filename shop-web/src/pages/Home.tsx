@@ -47,7 +47,10 @@ export default function Home() {
         <div className="home-page">
             <header className="home-header">
                 <span>DoroShop</span>
-                <Link to="/cart" style={{ marginLeft: 'auto', fontSize: 14 }}>购物车</Link>
+                <div className="home-nav">
+                    <Link to="/orders">我的订单</Link>
+                    <Link to="/cart">购物车</Link>
+                </div>
             </header>
             <div className="home-body">
                 <aside className="home-sidebar">

@@ -1,0 +1,29 @@
+.checkout-page { min-height: 100vh; background: #f5f5f5; padding-bottom: 96px; }
+.checkout-loading { min-height: 60vh; display: flex; flex-direction: column; gap: 16px; align-items: center; justify-content: center; }
+.checkout-header { height: 56px; background: #fff; display: flex; align-items: center; gap: 16px; padding: 0 24px; }
+.checkout-title { font-size: 20px; font-weight: 700; }
+.checkout-section { background: #fff; margin: 16px 24px; padding: 20px; border-radius: 8px; }
+.section-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+.address-card { padding: 12px 16px; background: #fafafa; border-radius: 6px; }
+.address-main { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.address-name { font-weight: 600; }
+.address-phone { color: #666; }
+.address-default { font-size: 12px; color: #1677ff; border: 1px solid #1677ff; border-radius: 3px; padding: 0 4px; }
+.address-detail { color: #555; }
+.checkout-item { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+.checkout-item:last-child { border-bottom: none; }
+.checkout-thumb img, .checkout-thumb .image-placeholder { width: 64px; height: 64px; border-radius: 6px; object-fit: cover; display: block; }
+.checkout-thumb .image-placeholder { font-size: 24px; }
+.checkout-item-info { flex: 1; min-width: 0; }
+.checkout-item-name { font-weight: 600; margin-bottom: 4px; }
+.checkout-item-spec { color: #888; font-size: 13px; }
+.checkout-item-price, .checkout-item-qty { width: 90px; color: #666; }
+.checkout-item-subtotal { width: 100px; color: #ff4d4f; font-weight: 600; text-align: right; }
+.checkout-footer {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 72px; background: #fff;
+    display: flex; align-items: center; justify-content: flex-end; gap: 24px;
+    padding: 0 24px; box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+}
+.checkout-total { font-size: 16px; }
+.checkout-total span { color: #ff4d4f; font-size: 22px; font-weight: 700; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
