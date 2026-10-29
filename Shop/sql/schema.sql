@@ -124,3 +124,78 @@ CREATE TABLE `cart` (
                         UNIQUE KEY `uk_user_sku` (`user_id`, `sku_id`),
                         KEY `idx_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='购物车';
+
+-- ------------------------------------------------------------
+-- 订单模块
+-- ------------------------------------------------------------
+CREATE TABLE `orders` (
+  `id`            BIGINT        NOT NULL COMMENT '主键（雪花ID）',
+  `order_no`      VARCHAR(32)   NOT NULL COMMENT '订单号（展示用，全局唯一）',
+  `user_id`       BIGINT        NOT NULL COMMENT '下单用户id',
+  `merchant_id`   BIGINT        NOT NULL DEFAULT 0 COMMENT '商家id（单商家阶段固定0，多商家时用于拆单）',
+  `total_amount`  DECIMAL(10,2) NOT NULL COMMENT '订单总额（快照）',
+  `pay_amount`    DECIMAL(10,2) NOT NULL COMMENT '应付金额',
+  `status`        TINYINT       NOT NULL DEFAULT 0 COMMENT '0待支付 1已支付 2已发货 3已完成 4已取消',
+  `expire_time`   DATETIME      NOT NULL COMMENT '支付截止时间（超时自动取消）',
+  `pay_time`      DATETIME      DEFAULT NULL COMMENT '支付时间',
+  `cancel_time`   DATETIME      DEFAULT NULL COMMENT '取消时间',
+  `remark`        VARCHAR(255)  DEFAULT NULL COMMENT '用户备注',
+  `create_time`   DATETIME      NOT NULL COMMENT '创建时间',
+  `update_time`   DATETIME      NOT NULL COMMENT '更新时间',
+  `deleted`       TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_user_status` (`user_id`, `status`),
+  KEY `idx_status_expire` (`status`, `expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单主表';
+
+CREATE TABLE `order_item` (
+  `id`            BIGINT        NOT NULL COMMENT '主键（雪花ID）',
+  `order_id`      BIGINT        NOT NULL COMMENT '订单id',
+  `order_no`      VARCHAR(32)   NOT NULL COMMENT '订单号（冗余，便于按单号查询）',
+  `spu_id`        BIGINT        NOT NULL COMMENT '商品SPU id',
+  `sku_id`        BIGINT        NOT NULL COMMENT '商品SKU id',
+  `product_name`  VARCHAR(100)  NOT NULL COMMENT '商品名称（快照）',
+  `spec_desc`     VARCHAR(100)  NOT NULL COMMENT '规格描述（快照）',
+  `image`         VARCHAR(255)  DEFAULT NULL COMMENT '商品图片（快照）',
+  `price`         DECIMAL(10,2) NOT NULL COMMENT '下单时单价（快照）',
+  `quantity`      INT           NOT NULL COMMENT '数量',
+  `total_amount`  DECIMAL(10,2) NOT NULL COMMENT '小计金额',
+  `create_time`   DATETIME      NOT NULL COMMENT '创建时间',
+  `update_time`   DATETIME      NOT NULL COMMENT '更新时间',
+  `deleted`       TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
+  PRIMARY KEY (`id`),
+  KEY `idx_order_id` (`order_id`),
+  KEY `idx_sku` (`sku_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单明细';
+
+CREATE TABLE `user_address` (
+  `id`             BIGINT       NOT NULL COMMENT '主键（雪花ID）',
+  `user_id`        BIGINT       NOT NULL COMMENT '所属用户id',
+  `receiver_name`  VARCHAR(50)  NOT NULL COMMENT '收货人',
+  `receiver_phone` VARCHAR(20)  NOT NULL COMMENT '收货电话',
+  `province`       VARCHAR(50)  NOT NULL COMMENT '省',
+  `city`           VARCHAR(50)  NOT NULL COMMENT '市',
+  `district`       VARCHAR(50)  NOT NULL COMMENT '区/县',
+  `detail`         VARCHAR(255) NOT NULL COMMENT '详细地址',
+  `is_default`     TINYINT      NOT NULL DEFAULT 0 COMMENT '1默认地址 0普通地址',
+  `create_time`    DATETIME     NOT NULL COMMENT '创建时间',
+  `update_time`    DATETIME     NOT NULL COMMENT '更新时间',
+  `deleted`        TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
+  PRIMARY KEY (`id`),
+  KEY `idx_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户收货地址';
+
+CREATE TABLE `order_address` (
+  `id`             BIGINT       NOT NULL COMMENT '主键（雪花ID）',
+  `order_id`       BIGINT       NOT NULL COMMENT '订单id',
+  `receiver_name`  VARCHAR(50)  NOT NULL COMMENT '收货人（快照）',
+  `receiver_phone` VARCHAR(20)  NOT NULL COMMENT '收货电话（快照）',
+  `province`       VARCHAR(50)  NOT NULL COMMENT '省（快照）',
+  `city`           VARCHAR(50)  NOT NULL COMMENT '市（快照）',
+  `district`       VARCHAR(50)  NOT NULL COMMENT '区/县（快照）',
+  `detail`         VARCHAR(255) NOT NULL COMMENT '详细地址（快照）',
+  `create_time`    DATETIME     NOT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order` (`order_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '订单收货地址快照';

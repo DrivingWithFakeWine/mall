@@ -77,6 +77,15 @@
   状态机：下单 available -= n、locked += n；支付 locked -= n；取消/超时 locked -= n、available += n
 - **多商家迭代时的连锁影响**（届时才处理）：① 下单按商家拆单 ② 商家端数据权限 ③ 商家账号模型。**订单表建表时先预留 `merchant_id` 列**，零成本规避历史订单迁移
 
+**订单模块表设计（2026-10-29 确认）**
+- `orders.status` 状态机：**0 待支付 / 1 已支付 / 2 已发货 / 3 已完成 / 4 已取消**（与商品/用户 status 语义无关）
+- `orders.merchant_id` 单商家阶段固定 0，多商家时用于拆单（已预留）
+- `orders.order_no` 展示用订单号，**唯一索引**；`expire_time` 用于超时取消（`idx_status_expire` 支撑扫描）
+- `order_item` 存**快照**：商品名、规格、图片、下单单价——商品改价改名不影响历史订单
+- `order_address` 为**不可变快照**（无 update_time / deleted），每单一条 `uk(order_id)`；用户改地址不影响历史订单
+- 库存两阶段：下单 available−n / locked+n，支付 locked−n，取消或超时 available+n / locked−n
+- 下单必须在一个事务内完成：校验购物车 → 条件扣库存（`WHERE available_stock >= n`）→ 建订单/明细/地址快照 → 删除已下单购物车项
+
 **全表通用规则**
 - 主键：雪花 ID `BIGINT`，**无自增**；MyBatis-Plus 全局 `assign_id`
 - 金额：`DECIMAL(10,2)` ↔ Java `BigDecimal`，**绝不用 double**
@@ -101,6 +110,7 @@
 2. 商品详情是否拆独立表（当前留在 `product_spu`，靠列表查询不查该列来规避大字段）
 3. **多商家迭代（后续阶段）**：`merchant` 表字段、商家账号模型（`doro_user.merchant_id` vs 独立账号体系）、商家后台工程
 4. **已知并发缺陷（留待压测验证后修复）**：`CartServiceImpl.add` 使用"读-改-写"（selectOne + updateById），并发加购同一 SKU 会丢更新；`updateQuantity` 的库存校验存在 TOCTOU（可接受，下单为最终防线）。计划：压测阶段先复现数据不一致，再改为 SQL 原子累加作为改造案例
+5. **订单提交幂等未实现**：`POST /order/submit` 目前只靠前端按钮 loading（异步状态无法挡住同一 tick 的两次点击）；网络重试也可能重复下单。计划：后续加幂等 token 或"同用户短时间唯一待支付订单"约束
 
 ## 6. 仓库与环境 ✅
 
