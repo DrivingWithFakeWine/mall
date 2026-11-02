@@ -1,3 +1,24 @@
+-- ------------------------------------------------------------
+-- 用户模块
+-- ------------------------------------------------------------
+CREATE TABLE `doro_user` (
+  `user_id`         BIGINT       NOT NULL COMMENT '主键（雪花ID）',
+  `user_name`       VARCHAR(50)  NOT NULL COMMENT '登录名',
+  `nick_name`       VARCHAR(50)  NOT NULL COMMENT '昵称',
+  `password`        VARCHAR(100) NOT NULL COMMENT 'BCrypt 密码哈希',
+  `telephone`       VARCHAR(11)  DEFAULT NULL COMMENT '手机号，可为空但非空时必须唯一',
+  `avatar`          VARCHAR(255) DEFAULT NULL COMMENT '头像URL',
+  `status`          TINYINT      NOT NULL DEFAULT 1 COMMENT '1正常 0封禁',
+  `role`            TINYINT      NOT NULL DEFAULT 0 COMMENT '0普通用户 1管理员',
+  `last_login_time` DATETIME     DEFAULT NULL COMMENT '最后登录时间',
+  `create_time`     DATETIME     NOT NULL COMMENT '创建时间',
+  `update_time`     DATETIME     NOT NULL COMMENT '更新时间',
+  `deleted`         TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
+  PRIMARY KEY (`user_id`),
+  UNIQUE KEY `uk_user_name` (`user_name`),
+  UNIQUE KEY `uk_telephone` (`telephone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
 CREATE TABLE `category` (
                             `id`          BIGINT      NOT NULL COMMENT '主键（雪花ID）',
                             `parent_id`   BIGINT      NOT NULL DEFAULT 0 COMMENT '父分类ID，一级分类为0',

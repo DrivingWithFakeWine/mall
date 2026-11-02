@@ -7,11 +7,12 @@ import com.dking.shop.entity.DoroUser;
 import com.dking.shop.exception.BusinessException;
 import com.dking.shop.mapper.DoroUserMapper;
 import com.dking.shop.service.DoroUserService;
-import com.dking.shop.util.JwtUtil;
+import com.dking.shop.util.JwtProvider;
 import com.dking.shop.vo.LoginVO;
 import com.dking.shop.vo.UserVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +25,8 @@ public class DoroUserServiceImpl  implements DoroUserService {
     private DoroUserMapper doroUserMapper;
     @Resource
     private PasswordEncoder passwordEncoder;
+    @Resource
+    private JwtProvider jwtProvider;
 
 
     @Override
@@ -37,11 +40,18 @@ public class DoroUserServiceImpl  implements DoroUserService {
         DoroUser doroUser = new DoroUser();
         doroUser.setUserName(dto.getUsername());
         doroUser.setNickName(dto.getNickname());
-        doroUser.setTelephone(dto.getTelephone());
+        // 空手机号存 NULL：uk_telephone 允许多个 NULL，但只允许一个空字符串
+        String telephone = dto.getTelephone() == null ? null : dto.getTelephone().trim();
+        doroUser.setTelephone(telephone == null || telephone.isEmpty() ? null : telephone);
         doroUser.setPassword(passwordEncoder.encode(dto.getPassword()));
-        doroUser.setRole(1);  // 非管理
-        doroUser.setStatus(1);  // 非封禁
-        doroUserMapper.insert(doroUser);
+        doroUser.setRole(0);  // 0 普通用户 / 1 管理员
+        doroUser.setStatus(1);  // 1 正常 / 0 封禁
+        try {
+            doroUserMapper.insert(doroUser);
+        } catch (DuplicateKeyException e) {
+            // 并发注册时预检查会漏看，唯一索引是最终防线
+            throw new BusinessException("用户名或手机号已被注册");
+        }
         log.info("用户注册成功, userId={}, username={}", doroUser.getUserId(), doroUser.getUserName());
     }
 
@@ -59,7 +69,7 @@ public class DoroUserServiceImpl  implements DoroUserService {
             throw new BusinessException("账号已被封禁");
         }
 
-        String accessToken = JwtUtil.createAccessToken(user);
+        String accessToken = jwtProvider.createAccessToken(user);
         log.info("用户登录成功, userId={}, username={}", user.getUserId(), user.getUserName());
         DoroUser update = new DoroUser();
         update.setUserId(user.getUserId());

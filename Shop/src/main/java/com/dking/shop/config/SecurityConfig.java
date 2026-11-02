@@ -1,7 +1,6 @@
 package com.dking.shop.config;
 
-import com.dking.shop.util.JwtUtil;
-import io.jsonwebtoken.security.Keys;
+import com.dking.shop.util.JwtProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -13,9 +12,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
-
 @Configuration
 public class SecurityConfig {
     @Bean
@@ -24,9 +20,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder() {
-        SecretKey key = Keys.hmacShaKeyFor(JwtUtil.SECRET.getBytes(StandardCharsets.UTF_8));
-        return  NimbusJwtDecoder.withSecretKey(key).build();
+    public JwtDecoder jwtDecoder(JwtProvider jwtProvider) {
+        return NimbusJwtDecoder.withSecretKey(jwtProvider.key()).build();
     }
 
     @Bean

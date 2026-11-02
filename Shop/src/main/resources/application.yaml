@@ -3,15 +3,17 @@ server:
 
 spring:
   profiles:
-    active: local,dev
+    active: ${SPRING_PROFILES_ACTIVE:local,dev}
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/doro_mall?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          secret-key: doroshop-jwt-secret-at-least-32-chars!!
+    url: ${DB_URL:jdbc:mysql://localhost:3306/doro_mall?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:doroshop-jwt-secret-at-least-32-chars!!}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
 mybatis-plus:
   configuration:
@@ -23,5 +25,3 @@ mybatis-plus:
       logic-delete-field: deleted           # 全局逻辑删除字段名
       logic-delete-value: 1
       logic-not-delete-value: 0
-
-
