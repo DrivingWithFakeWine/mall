@@ -114,6 +114,10 @@
 
 ## 6. 仓库与环境 ✅
 
+- **部署方案（2026-10-30 决定）**：阿里云 **ECS 2C4G** + **RDS MySQL 8.0（同 VPC 内网）**；应用以 **Docker Compose** 部署（backend + nginx 两个容器），Nginx 托管前端静态资源并把 `/api` 反代到后端；使用域名 + HTTPS；数据库连接与 JWT 密钥通过环境变量注入
+- **部署状态（2026-10-30 已上线）**：ECS 公网 IP `<APP_ECS_PUBLIC_IP>`，访问地址 `http://<APP_ECS_PUBLIC_IP>/`（暂无域名与 HTTPS，备案后补）；RDS 内网地址 `<RDS_ENDPOINT>`，库 `doro_mall`，账号 `<RDS_USER>`；数据库已导入 13 张表与测试数据
+- **镜像拉取**：Docker Hub 直连不稳定，采用第三方镜像站显式拉取后 `docker tag` 为标准 tag（如 `docker pull docker.1ms.run/eclipse-temurin:25-jre`）
+- **打包**：`mvn clean package -Pprod` 会排除 `application-local.yaml`，避免开发库密码进入发布物；生产 profile 关闭 SQL 日志
 - **MySQL 数据库名：`doro_mall`**（application.yaml 的 JDBC URL 已指向它）
 - 远程：`git@github.com:DrivingWithFakeWine/mall.git`（SSH 已验证）
 - 仓库本地身份：`DrivingWithFakeWine` / `DrivingWithFakeWine@users.noreply.github.com`（全局仍是 Gitee 身份，勿混用）
