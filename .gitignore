@@ -21,6 +21,9 @@ deploy/.env
 # 压测生成的大数据文件（本地生成，不入库）
 Shop/sql/gen_product_spu.sql
 
+# 本地压测报告与 JTL（生成物，不入库）
+loadtest-reports/
+
 # 系统文件
 Thumbs.db
 .DS_Store
