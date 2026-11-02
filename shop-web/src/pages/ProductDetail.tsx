@@ -6,6 +6,8 @@ import { addToCart } from '../api/cart'
 import ImageBox from '../components/ImageBox'
 import './ProductDetail.css'
 
+const MAX_BUY_QUANTITY = 99
+
 export default function ProductDetailPage() {
     const { id } = useParams<{ id: string }>()
     const navigate = useNavigate()
@@ -72,6 +74,10 @@ export default function ProductDetailPage() {
 
     const handleAddToCart = async () => {
         if (!currentSku) return
+        if (quantity > MAX_BUY_QUANTITY) {
+            message.warning(`单个商品最多购买 ${MAX_BUY_QUANTITY} 件`)
+            return
+        }
         if (quantity > currentSku.availableStock) {
             message.warning(`库存不足，当前仅剩 ${currentSku.availableStock} 件`)
             return
@@ -184,11 +190,14 @@ export default function ProductDetailPage() {
                         <span>数量</span>
                         <InputNumber
                             min={1}
-                            max={Math.min(99, currentSku?.availableStock ?? 99)}
                             value={quantity}
                             onChange={value => setQuantity(value ?? 1)}
                             disabled={!currentSku || soldOut}
                         />
+                        <span className="quantity-hint">
+                            单个商品最多 {MAX_BUY_QUANTITY} 件
+                            {currentSku ? `，当前库存 ${currentSku.availableStock} 件` : ''}
+                        </span>
                     </div>
 
                     <Button

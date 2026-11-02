@@ -11,6 +11,8 @@ import {
 import ImageBox from '../components/ImageBox'
 import './Cart.css'
 
+const MAX_BUY_QUANTITY = 99
+
 export default function CartPage() {
     const navigate = useNavigate()
     const [items, setItems] = useState<CartItemVO[]>([])
@@ -37,6 +39,14 @@ export default function CartPage() {
     )
 
     const handleQuantity = async (item: CartItemVO, quantity: number) => {
+        if (quantity > MAX_BUY_QUANTITY) {
+            message.warning(`单个商品最多购买 ${MAX_BUY_QUANTITY} 件`)
+            return
+        }
+        if (quantity > item.availableStock) {
+            message.warning(`库存不足，当前仅剩 ${item.availableStock} 件`)
+            return
+        }
         setBusyId(item.id)
         try {
             await updateCartQuantity(item.id, quantity)
@@ -105,7 +115,6 @@ export default function CartPage() {
                                     <div className="cart-price">¥{Number(item.price).toFixed(2)}</div>
                                     <InputNumber
                                         min={1}
-                                        max={Math.min(99, Math.max(item.availableStock, 1))}
                                         value={item.quantity}
                                         disabled={item.invalid || busyId === item.id}
                                         onChange={value => {

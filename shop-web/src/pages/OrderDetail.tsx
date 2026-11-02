@@ -58,6 +58,10 @@ export default function OrderDetailPage() {
 
     const handlePay = async () => {
         if (!detail) return
+        if (remainingMs <= 0) {
+            message.warning('订单已超时，请重新下单')
+            return
+        }
         setActing(true)
         try {
             await payOrder(detail.id)
@@ -97,6 +101,7 @@ export default function OrderDetailPage() {
     }
 
     const isWaitPay = detail.status === 0
+    const expired = isWaitPay && remainingMs <= 0
 
     return (
         <div className="order-page">
@@ -120,9 +125,11 @@ export default function OrderDetailPage() {
                         <Popconfirm title="确定取消该订单吗？" onConfirm={handleCancel}>
                             <Button disabled={acting}>取消订单</Button>
                         </Popconfirm>
-                        <Button type="primary" loading={acting} onClick={handlePay}>
-                            立即支付 ¥{Number(detail.payAmount).toFixed(2)}
-                        </Button>
+                        {!expired && (
+                            <Button type="primary" loading={acting} onClick={handlePay}>
+                                立即支付 ¥{Number(detail.payAmount).toFixed(2)}
+                            </Button>
+                        )}
                     </div>
                 )}
             </section>
