@@ -2,6 +2,8 @@ package com.dking.shop.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.dking.shop.entity.Category;
 import com.dking.shop.entity.ProductImage;
 import com.dking.shop.entity.ProductSku;
@@ -29,6 +31,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -63,6 +66,12 @@ public class ProductServiceImpl implements ProductService {
     @Resource
     private CategoryMapper categoryMapper;
 
+    // 商品总数按筛选条件缓存，任意页码共享；TTL 兜底，后续商品写操作再主动失效
+    private final Cache<String, Long> productCountCache = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofSeconds(30))
+            .maximumSize(1000)
+            .build();
+
     @Override
     public PageVO<ProductListItemVO> list(int page, int size, Long categoryId) {
         int safePage = Math.max(page, 1);
@@ -85,7 +94,10 @@ public class ProductServiceImpl implements ProductService {
             return emptyPage();
         }
 
-        Page<ProductSpu> result = productSpuMapper.selectPage(new Page<>(safePage, safeSize), wrapper);
+        // 关闭自动 COUNT：总数按筛选条件缓存，任意页码共享
+        Page<ProductSpu> pageParam = new Page<>(safePage, safeSize, false);
+        pageParam.setTotal(productTotal(categoryId));
+        Page<ProductSpu> result = productSpuMapper.selectPage(pageParam, wrapper);
 
         List<ProductListItemVO> records = result.getRecords().stream()
                 .map(this::toListItemVO)
@@ -236,6 +248,20 @@ public class ProductServiceImpl implements ProductService {
      *
      * @return false 表示该分类不存在/已禁用/没有子分类，调用方应返回空结果
      */
+    private long productTotal(Long categoryId) {
+        String key = categoryId == null ? "product:count:all" : "product:count:" + categoryId;
+        return productCountCache.get(key, k -> countProductSpu(categoryId));
+    }
+
+    private long countProductSpu(Long categoryId) {
+        LambdaQueryWrapper<ProductSpu> wrapper = new LambdaQueryWrapper<ProductSpu>()
+                .eq(ProductSpu::getStatus, SPU_STATUS_ON);
+        if (categoryId != null && !applyCategoryFilter(wrapper, categoryId)) {
+            return 0L;
+        }
+        return productSpuMapper.selectCount(wrapper);
+    }
+
     private boolean applyCategoryFilter(LambdaQueryWrapper<ProductSpu> wrapper, Long categoryId) {
         Category category = categoryMapper.selectById(categoryId);
         if (category == null || category.getStatus() != 1) {

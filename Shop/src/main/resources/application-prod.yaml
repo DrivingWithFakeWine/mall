@@ -20,4 +20,5 @@ server:
 logging:
   level:
     root: info
-    com.dking.shop: info
+    # 压测对照：关闭每请求业务 INFO 日志，降低 CPU 和磁盘写入
+    com.dking.shop: warn

@@ -48,7 +48,8 @@ CREATE TABLE `product_spu` (
                                `deleted`     TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
                                PRIMARY KEY (`id`),
                                UNIQUE KEY `uk_code` (`code`),
-                               KEY `idx_category_status` (`category_id`, `status`)
+                               KEY `idx_category_status` (`category_id`, `status`),
+                               KEY `idx_status_deleted_sales` (`status`, `deleted`, `sales` DESC, `id` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品SPU';
 
 CREATE TABLE `product_sku` (
