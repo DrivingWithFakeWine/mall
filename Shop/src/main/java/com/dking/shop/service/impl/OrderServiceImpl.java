@@ -37,6 +37,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -89,6 +90,21 @@ public class OrderServiceImpl implements OrderService {
 
     @Resource
     private OrderAddressMapper orderAddressMapper;
+
+    @Resource
+    private TransactionTemplate transactionTemplate;
+
+
+    private final Object[] cartLocks = new Object[64];
+    public OrderServiceImpl() {
+        for (int i = 0; i < cartLocks.length; i++) {
+            cartLocks[i] = new Object();
+        }
+    }
+
+    private Object lockOf(Long userId) {
+        return cartLocks[Math.floorMod(userId.hashCode(), cartLocks.length)];
+    }
 
     @Override
     public OrderConfirmVO confirm(Long userId) {
@@ -170,8 +186,13 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public OrderSubmitVO submit(Long userId, OrderSubmitDTO dto) {
+        synchronized (lockOf(userId)) {
+            return transactionTemplate.execute(status -> dosubmit(userId, dto));
+        }
+    }
+
+    private OrderSubmitVO dosubmit(Long userId, OrderSubmitDTO dto) {
         // ① 地址必须属于当前用户（防越权）
         UserAddress address = userAddressMapper.selectOne(
                 new LambdaQueryWrapper<UserAddress>()
@@ -181,7 +202,7 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("收货地址不存在");
         }
 
-        // ② 选中购物车项
+// ② 选中购物车项
         List<Cart> carts = cartMapper.selectList(
                 new LambdaQueryWrapper<Cart>()
                         .eq(Cart::getUserId, userId)
@@ -203,12 +224,13 @@ public class OrderServiceImpl implements OrderService {
         Map<Long, ProductSpu> spuMap = spuIds.isEmpty()
                 ? Map.of()
                 : productSpuMapper.selectBatchIds(spuIds).stream()
-                        .collect(Collectors.toMap(ProductSpu::getId, Function.identity()));
+                .collect(Collectors.toMap(ProductSpu::getId, Function.identity()));
 
         Map<Long, ProductStock> stockMap = productStockMapper.selectList(
                         new LambdaQueryWrapper<ProductStock>().in(ProductStock::getSkuId, skuIds))
                 .stream()
                 .collect(Collectors.toMap(ProductStock::getSkuId, Function.identity()));
+
 
         // ③ 先只读校验全部商品，避免无效请求触发扣减与回滚
         for (Cart cart : carts) {
@@ -297,6 +319,7 @@ public class OrderServiceImpl implements OrderService {
         // ⑧ 只清理本次下单的购物车项
         List<Long> cartIds = carts.stream().map(Cart::getId).toList();
         cartMapper.deleteBatchIds(cartIds);
+
 
         log.info("提交订单成功, userId={}, orderNo={}, payAmount={}, itemCount={}",
                 userId, orderNo, totalAmount, carts.size());

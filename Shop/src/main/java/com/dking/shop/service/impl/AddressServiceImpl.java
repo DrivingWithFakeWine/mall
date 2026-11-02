@@ -12,7 +12,7 @@ import com.dking.shop.vo.UserAddressVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -26,6 +26,22 @@ public class AddressServiceImpl implements AddressService {
 
     @Resource
     private UserAddressMapper userAddressMapper;
+
+    @Resource
+    private TransactionTemplate transactionTemplate;
+
+    // 按 userId 分段锁，避免同一用户的默认地址并发操作互相干扰
+    private final Object[] addressLocks = new Object[64];
+
+    public AddressServiceImpl() {
+        for (int i = 0; i < addressLocks.length; i++) {
+            addressLocks[i] = new Object();
+        }
+    }
+
+    private Object lockOf(Long userId) {
+        return addressLocks[Math.floorMod(userId.hashCode(), addressLocks.length)];
+    }
 
     @Override
     public List<UserAddressVO> list(Long userId) {
@@ -42,8 +58,14 @@ public class AddressServiceImpl implements AddressService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void add(Long userId, AddressSaveDTO dto) {
+        // 锁必须在事务外层：事务提交后再释放锁，下一个请求才能看到已提交的默认地址
+        synchronized (lockOf(userId)) {
+            transactionTemplate.executeWithoutResult(status -> doAdd(userId, dto));
+        }
+    }
+
+    private void doAdd(Long userId, AddressSaveDTO dto) {
         Long count = userAddressMapper.selectCount(
                 new LambdaQueryWrapper<UserAddress>().eq(UserAddress::getUserId, userId));
         if (count >= MAX_ADDRESS_COUNT) {
@@ -73,8 +95,14 @@ public class AddressServiceImpl implements AddressService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void update(Long userId, Long id, AddressSaveDTO dto) {
+        // 锁在事务外层：提交完成后再释放，避免并发设置默认地址读到旧状态
+        synchronized (lockOf(userId)) {
+            transactionTemplate.executeWithoutResult(status -> doUpdate(userId, id, dto));
+        }
+    }
+
+    private void doUpdate(Long userId, Long id, AddressSaveDTO dto) {
         UserAddress existing = userAddressMapper.selectOne(
                 new LambdaQueryWrapper<UserAddress>()
                         .eq(UserAddress::getId, id)

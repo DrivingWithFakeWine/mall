@@ -49,6 +49,18 @@ public class CartServiceImpl implements CartService {
     @Resource
     private ProductStockMapper productStockMapper;
 
+    private final Object[] cartLocks = new Object[64];
+    public CartServiceImpl() {
+        for (int i = 0; i < cartLocks.length; i++) {
+            cartLocks[i] = new Object();
+        }
+    }
+
+    private Object lockOf(Long userId) {
+        return cartLocks[Math.floorMod(userId.hashCode(), cartLocks.length)];
+    }
+
+
     @Override
     public void add(Long userId, CartAddDTO dto) {
         ProductSku sku = productSkuMapper.selectById(dto.getSkuId());
@@ -67,42 +79,43 @@ public class CartServiceImpl implements CartService {
                         .eq(ProductStock::getSkuId, dto.getSkuId()));
         int available = stock == null ? 0 : stock.getAvailableStock();
 
-        Cart existing = cartMapper.selectOne(
-                new LambdaQueryWrapper<Cart>()
+        int targetQuantity;
+        synchronized (lockOf(userId)) {
+            Cart existing = cartMapper.selectOne(
+                    new LambdaQueryWrapper<Cart>()
+                            .eq(Cart::getUserId, userId)
+                            .eq(Cart::getSkuId, dto.getSkuId()));
+
+            targetQuantity = dto.getQuantity() + (existing == null ? 0 : existing.getQuantity());
+            if (targetQuantity > MAX_QUANTITY) {
+                throw new BusinessException("单个商品数量不能超过 " + MAX_QUANTITY);
+            }
+            if (available < targetQuantity) {
+                throw new BusinessException("库存不足");
+            }
+
+            if (existing != null) {
+                // 只更新数量，避免整行写回覆盖并发修改的 selected
+                cartMapper.update(null, new LambdaUpdateWrapper<Cart>()
+                        .eq(Cart::getId, existing.getId())
                         .eq(Cart::getUserId, userId)
-                        .eq(Cart::getSkuId, dto.getSkuId()));
-
-        int targetQuantity = dto.getQuantity() + (existing == null ? 0 : existing.getQuantity());
-        if (targetQuantity > MAX_QUANTITY) {
-            throw new BusinessException("单个商品数量不能超过 " + MAX_QUANTITY);
-        }
-        if (available < targetQuantity) {
-            throw new BusinessException("库存不足");
-        }
-
-        if (existing != null) {
-            existing.setQuantity(targetQuantity);
-            cartMapper.updateById(existing);
-        } else {
-            Cart cart = new Cart();
-            cart.setUserId(userId);
-            cart.setSkuId(dto.getSkuId());
-            cart.setQuantity(dto.getQuantity());
-            cart.setSelected(1);
-            try {
-                cartMapper.insert(cart);
-            } catch (DuplicateKeyException e) {
-                // 并发加购同一 SKU：另一请求已插入，改为累加
-                Cart current = cartMapper.selectOne(
-                        new LambdaQueryWrapper<Cart>()
-                                .eq(Cart::getUserId, userId)
-                                .eq(Cart::getSkuId, dto.getSkuId()));
-                if (current != null) {
-                    current.setQuantity(Math.min(current.getQuantity() + dto.getQuantity(), MAX_QUANTITY));
-                    cartMapper.updateById(current);
+                        .set(Cart::getQuantity, targetQuantity));
+            } else {
+                Cart cart = new Cart();
+                cart.setUserId(userId);
+                cart.setSkuId(dto.getSkuId());
+                cart.setQuantity(dto.getQuantity());
+                cart.setSelected(1);
+                try {
+                    cartMapper.insert(cart);
+                } catch (DuplicateKeyException e) {
+                    // 并发加购同一 SKU：另一请求已插入，改为累加
+                    throw new IllegalStateException("购物车并发插入冲突，userId=" + userId
+                            + ", skuId=" + dto.getSkuId(), e);
                 }
             }
         }
+
 
         log.info("加入购物车, userId={}, skuId={}, quantity={}, target={}",
                 userId, dto.getSkuId(), dto.getQuantity(), targetQuantity);
@@ -150,24 +163,33 @@ public class CartServiceImpl implements CartService {
 
     @Override
     public void updateQuantity(Long userId, CartQuantityDTO dto) {
-        Cart cart = cartMapper.selectOne(
-                new LambdaQueryWrapper<Cart>()
-                        .eq(Cart::getId, dto.getId())
-                        .eq(Cart::getUserId, userId));
-        if (cart == null) {
-            throw new NotFoundException("购物车项不存在");
-        }
+        // 与 add 共用同一把用户锁，锁住"查数量 -> 算 -> 写数量"整段
+        synchronized (lockOf(userId)) {
+            Cart cart = cartMapper.selectOne(
+                    new LambdaQueryWrapper<Cart>()
+                            .eq(Cart::getId, dto.getId())
+                            .eq(Cart::getUserId, userId));
+            if (cart == null) {
+                throw new NotFoundException("购物车项不存在");
+            }
 
-        ProductStock stock = productStockMapper.selectOne(
-                new LambdaQueryWrapper<ProductStock>()
-                        .eq(ProductStock::getSkuId, cart.getSkuId()));
-        int available = stock == null ? 0 : stock.getAvailableStock();
-        if (available < dto.getQuantity()) {
-            throw new BusinessException("库存不足");
-        }
+            ProductStock stock = productStockMapper.selectOne(
+                    new LambdaQueryWrapper<ProductStock>()
+                            .eq(ProductStock::getSkuId, cart.getSkuId()));
+            int available = stock == null ? 0 : stock.getAvailableStock();
+            if (available < dto.getQuantity()) {
+                throw new BusinessException("库存不足");
+            }
 
-        cart.setQuantity(dto.getQuantity());
-        cartMapper.updateById(cart);
+            // 只更新数量，避免整行写回覆盖并发修改的 selected
+            int rows = cartMapper.update(null, new LambdaUpdateWrapper<Cart>()
+                    .eq(Cart::getId, cart.getId())
+                    .eq(Cart::getUserId, userId)
+                    .set(Cart::getQuantity, dto.getQuantity()));
+            if (rows == 0) {
+                throw new NotFoundException("购物车项不存在");
+            }
+        }
 
         log.info("修改购物车数量, userId={}, cartId={}, quantity={}",
                 userId, dto.getId(), dto.getQuantity());
