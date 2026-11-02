@@ -1,0 +1,60 @@
+name: doroshop
+
+services:
+  backend:
+    image: eclipse-temurin:25-jre
+    container_name: doroshop-backend
+    working_dir: /app
+    command:
+      - java
+      - -Duser.timezone=Asia/Shanghai
+      - -Xms256m
+      - -Xmx1g
+      - -XX:MaxMetaspaceSize=256m
+      - -XX:+ExitOnOutOfMemoryError
+      - -Xlog:gc:stdout:time,uptime
+      - -jar
+      - /app/app.jar
+    volumes:
+      - ./backend/Shop.jar:/app/app.jar:ro
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod
+      # 临时：压测对照实验用，验证日志是否拖慢吞吐
+      LOGGING_LEVEL_COM_DKING_SHOP: WARN
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    mem_limit: 1600m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - doroshop
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: doroshop-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - doroshop
+
+networks:
+  doroshop:
+    driver: bridge

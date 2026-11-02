@@ -1,0 +1,23 @@
+# 生产环境配置：SPRING_PROFILES_ACTIVE=prod 时生效
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 3000
+  jackson:
+    time-zone: Asia/Shanghai
+
+mybatis-plus:
+  configuration:
+    # 生产关闭 SQL 打印：压测时日志会显著拖低 QPS
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+server:
+  # 通过 Nginx 反代时，正确识别客户端 IP 与协议
+  forward-headers-strategy: framework
+
+logging:
+  level:
+    root: info
+    com.dking.shop: info
