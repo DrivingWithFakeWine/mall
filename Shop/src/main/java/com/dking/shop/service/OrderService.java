@@ -1,5 +1,6 @@
 package com.dking.shop.service;
 
+import com.dking.shop.dto.DirectOrderSubmitDTO;
 import com.dking.shop.dto.OrderSubmitDTO;
 import com.dking.shop.vo.OrderConfirmVO;
 import com.dking.shop.vo.OrderDetailVO;
@@ -7,6 +8,8 @@ import com.dking.shop.vo.OrderListItemVO;
 import com.dking.shop.vo.OrderPayVO;
 import com.dking.shop.vo.OrderSubmitVO;
 import com.dking.shop.vo.PageVO;
+
+import java.util.List;
 
 public interface OrderService {
 
@@ -19,6 +22,9 @@ public interface OrderService {
      */
     OrderSubmitVO submit(Long userId, OrderSubmitDTO dto);
 
+    /** 立即购买：不经过购物车，单 SKU 校验地址与库存后下单 */
+    OrderSubmitVO submitDirect(Long userId, DirectOrderSubmitDTO dto);
+
     /** 我的订单列表；status 为空表示全部 */
     PageVO<OrderListItemVO> list(Long userId, int page, int size, Integer status);
 
@@ -30,4 +36,13 @@ public interface OrderService {
 
     /** 取消订单：仅待支付可取消；回滚库存（available + n、locked - n） */
     void cancel(Long userId, Long orderId);
+
+    /** 超时任务用：取一批已过期未支付的订单 id，按 expire_time 升序 */
+    List<Long> findExpiredWaitPayOrderIds(int limit);
+
+    /**
+     * 超时取消单笔订单：条件更新为已取消并回滚库存。
+     * 返回 false 表示订单已被支付或已取消，属于正常并发结果。
+     */
+    boolean cancelExpiredOrder(Long orderId);
 }

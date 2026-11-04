@@ -2,6 +2,8 @@ package com.dking.shop.controller;
 
 import com.dking.shop.common.Result;
 import com.dking.shop.dto.LoginDTO;
+import com.dking.shop.dto.PasswordChangeDTO;
+import com.dking.shop.dto.ProfileUpdateDTO;
 import com.dking.shop.dto.RegisterDTO;
 import com.dking.shop.entity.DoroUser;
 import com.dking.shop.service.DoroUserService;
@@ -34,5 +36,18 @@ public class UserController {
     public Result<UserVO> me(@AuthenticationPrincipal Jwt jwt) {
         Long userId = Long.valueOf(jwt.getSubject());
         return Result.success(doroUserService.getUserById(userId));
+    }
+
+    @PutMapping("/profile")
+    public Result<UserVO> updateProfile(@AuthenticationPrincipal Jwt jwt,
+                                        @RequestBody @Valid ProfileUpdateDTO dto) {
+        return Result.success(doroUserService.updateProfile(Long.valueOf(jwt.getSubject()), dto));
+    }
+
+    @PutMapping("/password")
+    public Result<Void> changePassword(@AuthenticationPrincipal Jwt jwt,
+                                       @RequestBody @Valid PasswordChangeDTO dto) {
+        doroUserService.changePassword(Long.valueOf(jwt.getSubject()), dto);
+        return Result.success();
     }
 }

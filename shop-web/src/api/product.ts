@@ -18,7 +18,12 @@ const MOCK_PAGE: ProductPage = {
 
 const USE_MOCK = false    // 后端 /product/list 验证通过后改 false
 
-export async function getProductList(params: { page: number; size: number; categoryId?: string }) {
+export async function getProductList(params: {
+    page: number
+    size: number
+    categoryId?: string
+    keyword?: string
+}) {
     if (USE_MOCK) return MOCK_PAGE
     const res = await axios.get<{ code: number; message: string; data: ProductPage }>(
         '/api/product/list', { params })

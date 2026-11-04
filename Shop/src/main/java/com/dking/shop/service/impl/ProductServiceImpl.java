@@ -20,6 +20,8 @@ import com.dking.shop.mapper.ProductSpecValueMapper;
 import com.dking.shop.mapper.ProductSpuMapper;
 import com.dking.shop.mapper.ProductStockMapper;
 import com.dking.shop.service.ProductService;
+import com.dking.shop.service.support.ProductSearchSupport;
+import com.dking.shop.util.LikeUtils;
 import com.dking.shop.vo.PageVO;
 import com.dking.shop.vo.ProductDetailVO;
 import com.dking.shop.vo.ProductImageVO;
@@ -66,6 +68,9 @@ public class ProductServiceImpl implements ProductService {
     @Resource
     private CategoryMapper categoryMapper;
 
+    @Resource
+    private ProductSearchSupport productSearchSupport;
+
     // 商品总数按筛选条件缓存，任意页码共享；TTL 兜底，后续商品写操作再主动失效
     private final Cache<String, Long> productCountCache = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofSeconds(30))
@@ -73,9 +78,10 @@ public class ProductServiceImpl implements ProductService {
             .build();
 
     @Override
-    public PageVO<ProductListItemVO> list(int page, int size, Long categoryId) {
+    public PageVO<ProductListItemVO> list(int page, int size, Long categoryId, String keyword) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        String kw = LikeUtils.normalize(keyword);
 
         LambdaQueryWrapper<ProductSpu> wrapper = new LambdaQueryWrapper<ProductSpu>()
                 .eq(ProductSpu::getStatus, SPU_STATUS_ON)
@@ -94,9 +100,26 @@ public class ProductServiceImpl implements ProductService {
             return emptyPage();
         }
 
-        // 关闭自动 COUNT：总数按筛选条件缓存，任意页码共享
-        Page<ProductSpu> pageParam = new Page<>(safePage, safeSize, false);
-        pageParam.setTotal(productTotal(categoryId));
+        if (kw != null) {
+            List<Long> matchedCategoryIds = productSearchSupport.categoryIdsByKeyword(kw);
+            wrapper.and(w -> {
+                w.like(ProductSpu::getName, kw)
+                        .or()
+                        .like(ProductSpu::getSubtitle, kw);
+                if (!matchedCategoryIds.isEmpty()) {
+                    w.or().in(ProductSpu::getCategoryId, matchedCategoryIds);
+                }
+            });
+        }
+
+        // 无关键字时总数按分类缓存；带关键字时结果集与关键字相关，交给数据库 COUNT
+        Page<ProductSpu> pageParam;
+        if (kw == null) {
+            pageParam = new Page<>(safePage, safeSize, false);
+            pageParam.setTotal(productTotal(categoryId));
+        } else {
+            pageParam = new Page<>(safePage, safeSize, true);
+        }
         Page<ProductSpu> result = productSpuMapper.selectPage(pageParam, wrapper);
 
         List<ProductListItemVO> records = result.getRecords().stream()
@@ -107,8 +130,8 @@ public class ProductServiceImpl implements ProductService {
         pageVO.setTotal(Math.toIntExact(result.getTotal()));
         pageVO.setRecords(records);
 
-        log.info("查询商品列表, page={}, size={}, categoryId={}, total={}",
-                safePage, safeSize, categoryId, result.getTotal());
+        log.info("查询商品列表, page={}, size={}, categoryId={}, keyword={}, total={}",
+                safePage, safeSize, categoryId, keyword, result.getTotal());
         return pageVO;
     }
 

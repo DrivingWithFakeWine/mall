@@ -1,6 +1,7 @@
 package com.dking.shop.controller;
 
 import com.dking.shop.common.Result;
+import com.dking.shop.dto.DirectOrderSubmitDTO;
 import com.dking.shop.dto.OrderSubmitDTO;
 import com.dking.shop.service.OrderService;
 import com.dking.shop.vo.OrderConfirmVO;
@@ -37,6 +38,12 @@ public class OrderController {
     public Result<OrderSubmitVO> submit(@AuthenticationPrincipal Jwt jwt,
                                         @RequestBody @Valid OrderSubmitDTO dto) {
         return Result.success(orderService.submit(Long.valueOf(jwt.getSubject()), dto));
+    }
+
+    @PostMapping("/buy-now")
+    public Result<OrderSubmitVO> buyNow(@AuthenticationPrincipal Jwt jwt,
+                                        @RequestBody @Valid DirectOrderSubmitDTO dto) {
+        return Result.success(orderService.submitDirect(Long.valueOf(jwt.getSubject()), dto));
     }
 
     @GetMapping("/list")

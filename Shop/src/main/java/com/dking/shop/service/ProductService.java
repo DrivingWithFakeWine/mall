@@ -12,8 +12,9 @@ public interface ProductService {
      * @param page       页码，从 1 开始
      * @param size       每页条数，最大 50
      * @param categoryId 分类 id（一级或二级），为空表示全部
+     * @param keyword    关键字，匹配商品名或副标题；为空表示不筛选
      */
-    PageVO<ProductListItemVO> list(int page, int size, Long categoryId);
+    PageVO<ProductListItemVO> list(int page, int size, Long categoryId, String keyword);
 
     /**
      * 商品详情：SPU + 图片 + 规格 + 上架 SKU（含可用库存）。

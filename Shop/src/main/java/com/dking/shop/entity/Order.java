@@ -24,6 +24,9 @@ public class Order {
     /** 单商家阶段固定 0，多商家时用于拆单 */
     private Long merchantId;
 
+    /** 秒杀活动 id；普通订单为 null */
+    private Long activityId;
+
     private BigDecimal totalAmount;
     private BigDecimal payAmount;
 

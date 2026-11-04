@@ -1,0 +1,16 @@
+# 仅用于性能剖析（JFR + GC 文件日志），不要用于吞吐基线。
+# 用法：docker compose -f docker-compose.yml -f docker-compose.profiling.yml up -d backend
+# JFR 与 GC 文件会明显拉低 2C 机器的 QPS，剖析结果只能用于找热点，不能和基线对比。
+services:
+  backend:
+    command:
+      - java
+      - -Duser.timezone=Asia/Shanghai
+      - -Xms256m
+      - -Xmx1g
+      - -XX:MaxMetaspaceSize=256m
+      - -XX:+ExitOnOutOfMemoryError
+      - -Xlog:gc*:file=/tmp/gc.log:time,uptime:filecount=5,filesize=20m
+      - -XX:StartFlightRecording=filename=/tmp/app.jfr,settings=default,dumponexit=true
+      - -jar
+      - /app/app.jar

@@ -4,6 +4,100 @@
  */
 
 export interface paths {
+    "/user/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 注册
+         * @description 用户名 4-16 位字母开头；手机号可空，非空时必须唯一。
+         */
+        post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 登录 */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前用户信息 */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改昵称与手机号
+         * @description 手机号传空串或 null 表示清空；非空时不能与其他账号重复。
+         */
+        put: operations["updateProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改密码
+         * @description 校验旧密码后更新；修改成功后旧 token 仍可用，直到过期。
+         */
+        put: operations["changePassword"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/category/tree": {
         parameters: {
             query?: never;
@@ -202,6 +296,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/order/buy-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 立即购买（单 SKU 直购）
+         * @description 需登录。不经过购物车：校验地址归属、SKU 上下架与库存 → 条件扣库存（available−n、locked+n）
+         *     → 生成订单/明细/地址快照，同一事务内完成。数量上限 99，且不能超过可用库存。
+         */
+        post: operations["buyNow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/order/list": {
         parameters: {
             query?: never;
@@ -343,6 +458,68 @@ export interface paths {
          * @description 逻辑删除，只能删除自己的地址；删除默认地址后不自动补位（confirm 会回退到最新一条）。
          */
         delete: operations["deleteAddress"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/seckill/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 秒杀活动列表
+         * @description 上线且未结束的活动，按开始时间升序；公开接口。keyword 匹配活动名或商品名。
+         */
+        get: operations["listSeckillActivities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/seckill/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 秒杀活动详情
+         * @description 上线中的活动详情；serverTime 用于前端倒计时校正，避免客户端时钟偏差。
+         */
+        get: operations["getSeckillActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/seckill/{id}/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 秒杀下单
+         * @description 需登录。数量固定 1，同一用户同一活动只能成功一单（唯一键兜底）。
+         *     条件扣减活动库存 `available_stock >= 1`，与商品库存 product_stock 相互独立；
+         *     支付只累加销量，取消与超时取消归还活动库存。
+         */
+        post: operations["submitSeckillOrder"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -527,6 +704,73 @@ export interface components {
             totalAmount: number;
             /** @description 默认收货地址；为 null 表示尚未添加 */
             address?: components["schemas"]["UserAddressVO"] | null;
+        };
+        RegisterDTO: {
+            /**
+             * @description 4-16 位，字母开头
+             * @example doroshop01
+             */
+            username: string;
+            nickname: string;
+            /** Format: password */
+            password: string;
+            /**
+             * @description 手机号，可为空；非空时必须唯一
+             * @example 13800138000
+             */
+            telephone?: string | null;
+        };
+        LoginDTO: {
+            username: string;
+            /** Format: password */
+            password: string;
+        };
+        LoginVO: {
+            /** @description JWT，请求头 Bearer */
+            accessToken: string;
+            userId: string;
+            nickname: string;
+        };
+        UserVO: {
+            id: string;
+            username: string;
+            nickname: string;
+            telephone?: string | null;
+            avatar?: string | null;
+        };
+        ProfileUpdateDTO: {
+            nickname: string;
+            /** @description 传空串或 null 表示清空 */
+            telephone?: string | null;
+        };
+        PasswordChangeDTO: {
+            /** Format: password */
+            oldPassword: string;
+            /** Format: password */
+            newPassword: string;
+        };
+        DirectOrderSubmitDTO: {
+            /** @description 要购买的 SKU id */
+            skuId: string;
+            /** @description 收货地址 id */
+            addressId: string;
+            /** @default 1 */
+            quantity: number;
+            remark?: string;
+        };
+        ApiLogin: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["LoginVO"];
+        };
+        ApiUser: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["UserVO"];
         };
         OrderSubmitVO: {
             orderId: string;
@@ -736,6 +980,61 @@ export interface components {
             message: string;
             data?: components["schemas"]["ProductDetail"];
         };
+        SeckillActivityListItem: {
+            id: string;
+            spuId: string;
+            skuId: string;
+            /** @description 活动名称 */
+            name: string;
+            /** @description 商品名称 */
+            productName: string;
+            image?: string | null;
+            specDesc?: string | null;
+            /** Format: double */
+            seckillPrice: number;
+            /** Format: double */
+            originalPrice?: number | null;
+            totalStock: number;
+            availableStock: number;
+            /** Format: date-time */
+            startTime: string;
+            /** Format: date-time */
+            endTime: string;
+            /** @description 0 未开始 / 1 进行中 / 2 已结束 / 3 已售罄 */
+            phase: number;
+        };
+        SeckillActivityDetail: components["schemas"]["SeckillActivityListItem"] & {
+            /** @description 每人限购数量 */
+            perUserLimit: number;
+            /**
+             * Format: date-time
+             * @description 服务器当前时间
+             */
+            serverTime: string;
+        };
+        SeckillPage: {
+            total: number;
+            records: components["schemas"]["SeckillActivityListItem"][];
+        };
+        SeckillOrderDTO: {
+            /** @description 收货地址 id */
+            addressId: string;
+            remark?: string;
+        };
+        ApiSeckillList: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["SeckillPage"];
+        };
+        ApiSeckillDetail: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["SeckillActivityDetail"];
+        };
         ApiError: {
             /** @example 404 */
             code: number;
@@ -751,6 +1050,185 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterDTO"];
+            };
+        };
+        responses: {
+            /** @description 注册成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 参数校验失败或用户名/手机号已存在 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginDTO"];
+            };
+        };
+        responses: {
+            /** @description 登录成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiLogin"];
+                };
+            };
+            /** @description 用户名或密码错误，或账号被封禁 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiUser"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdateDTO"];
+            };
+        };
+        responses: {
+            /** @description 修改成功，返回最新资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiUser"];
+                };
+            };
+            /** @description 参数校验失败或手机号已被使用 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeDTO"];
+            };
+        };
+        responses: {
+            /** @description 修改成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiVoid"];
+                };
+            };
+            /** @description 旧密码错误或新密码不符合规则 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getCategoryTree: {
         parameters: {
             query?: never;
@@ -832,6 +1310,11 @@ export interface operations {
                  * @example 1900000000000000011
                  */
                 categoryId?: string;
+                /**
+                 * @description 关键字，匹配商品名称或副标题；为空表示不筛选
+                 * @example iPhone
+                 */
+                keyword?: string;
             };
             header?: never;
             path?: never;
@@ -1379,6 +1862,56 @@ export interface operations {
             };
         };
     };
+    buyNow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "skuId": "1920000000000000001",
+                 *       "quantity": 1,
+                 *       "addressId": "2115000000000000001",
+                 *       "remark": "立即购买"
+                 *     }
+                 */
+                "application/json": components["schemas"]["DirectOrderSubmitDTO"];
+            };
+        };
+        responses: {
+            /** @description 下单成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiOrderSubmit"];
+                };
+            };
+            /** @description 商品不存在/已下架、库存不足或地址不存在 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     listOrders: {
         parameters: {
             query?: {
@@ -1812,6 +2345,124 @@ export interface operations {
                 };
             };
             /** @description 地址不存在或不属于当前用户 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listSeckillActivities: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                /**
+                 * @description 关键字，匹配活动名称或商品名称
+                 * @example iPhone
+                 */
+                keyword?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSeckillList"];
+                };
+            };
+        };
+    };
+    getSeckillActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSeckillDetail"];
+                };
+            };
+            /** @description 活动不存在或已下线 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    submitSeckillOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "addressId": "2115000000000000001",
+                 *       "remark": "秒杀"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SeckillOrderDTO"];
+            };
+        };
+        responses: {
+            /** @description 下单成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiOrderSubmit"];
+                };
+            };
+            /** @description 活动未开始/已结束/售罄、商品下架、重复提交或地址不存在 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 活动不存在或已下线 */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button, Empty, InputNumber, Spin, Tag, message } from 'antd'
 import { getProductDetail, type ProductDetail } from '../api/product'
 import { addToCart } from '../api/cart'
+import { buyNow } from '../api/order'
+import AddressSelectModal from '../components/AddressSelectModal'
 import ImageBox from '../components/ImageBox'
 import './ProductDetail.css'
 
@@ -18,6 +20,8 @@ export default function ProductDetailPage() {
     const [activeImage, setActiveImage] = useState(0)
     const [quantity, setQuantity] = useState(1)
     const [adding, setAdding] = useState(false)
+    const [buyOpen, setBuyOpen] = useState(false)
+    const [buying, setBuying] = useState(false)
 
     useEffect(() => {
         if (!id) return
@@ -71,6 +75,42 @@ export default function ProductDetailPage() {
     useEffect(() => {
         setQuantity(1)
     }, [currentSku?.id])
+
+    const handleBuyNow = () => {
+        if (!currentSku) {
+            message.warning('请选择规格')
+            return
+        }
+        if (quantity > currentSku.availableStock) {
+            message.warning(`库存不足，当前仅剩 ${currentSku.availableStock} 件`)
+            return
+        }
+        if (!localStorage.getItem('token')) {
+            message.warning('请先登录')
+            navigate('/login')
+            return
+        }
+        setBuyOpen(true)
+    }
+
+    const handleConfirmBuy = async (addressId: string) => {
+        if (!currentSku) return
+        setBuying(true)
+        try {
+            const order = await buyNow({
+                skuId: currentSku.id,
+                quantity,
+                addressId,
+            })
+            message.success('下单成功，请尽快支付')
+            setBuyOpen(false)
+            navigate(`/order/${order.orderId}`)
+        } catch (e) {
+            message.error((e as Error).message || '下单失败')
+        } finally {
+            setBuying(false)
+        }
+    }
 
     const handleAddToCart = async () => {
         if (!currentSku) return
@@ -200,16 +240,26 @@ export default function ProductDetailPage() {
                         </span>
                     </div>
 
-                    <Button
-                        type="primary"
-                        size="large"
-                        block
-                        loading={adding}
-                        disabled={!currentSku || soldOut}
-                        onClick={handleAddToCart}
-                    >
-                        {soldOut ? '已售罄' : '加入购物车'}
-                    </Button>
+                    <div className="detail-actions">
+                        <Button
+                            size="large"
+                            block
+                            loading={adding}
+                            disabled={!currentSku || soldOut}
+                            onClick={handleAddToCart}
+                        >
+                            {soldOut ? '已售罄' : '加入购物车'}
+                        </Button>
+                        <Button
+                            type="primary"
+                            size="large"
+                            block
+                            disabled={!currentSku || soldOut}
+                            onClick={handleBuyNow}
+                        >
+                            {soldOut ? '已售罄' : '立即购买'}
+                        </Button>
+                    </div>
                 </div>
             </div>
 
@@ -217,6 +267,23 @@ export default function ProductDetailPage() {
                 <h2>商品详情</h2>
                 <p>{spu.detail || '暂无详情'}</p>
             </section>
+
+            <AddressSelectModal
+                open={buyOpen}
+                title="确认购买"
+                confirmText="提交订单"
+                submitting={buying}
+                summary={(
+                    <div className="detail-buy-summary">
+                        <span>{spu.name}{currentSku ? ` · ${currentSku.specDesc}` : ''}</span>
+                        <span className="detail-buy-price">
+                            ¥{(Number(price) * quantity).toFixed(2)} × {quantity}
+                        </span>
+                    </div>
+                )}
+                onCancel={() => setBuyOpen(false)}
+                onConfirm={handleConfirmBuy}
+            />
         </div>
     )
 }

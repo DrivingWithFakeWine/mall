@@ -12,7 +12,6 @@ services:
       - -Xmx1g
       - -XX:MaxMetaspaceSize=256m
       - -XX:+ExitOnOutOfMemoryError
-      - -Xlog:gc:stdout:time,uptime
       - -jar
       - /app/app.jar
     volumes:
@@ -41,6 +40,8 @@ services:
     container_name: doroshop-nginx
     ports:
       - "80:80"
+      # 仅本机可访问，压测时用于拉取 Nginx stub_status
+      - "127.0.0.1:8081:8081"
     volumes:
       - ./frontend/dist:/usr/share/nginx/html:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro

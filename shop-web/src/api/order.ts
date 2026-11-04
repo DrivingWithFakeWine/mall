@@ -8,6 +8,7 @@ export type OrderPage = components['schemas']['OrderPage']
 export type OrderDetailVO = components['schemas']['OrderDetailVO']
 export type OrderPayVO = components['schemas']['OrderPayVO']
 export type OrderSubmitVO = components['schemas']['OrderSubmitVO']
+export type DirectOrderSubmitDTO = components['schemas']['DirectOrderSubmitDTO']
 
 export async function confirmOrder(): Promise<OrderConfirmVO> {
     const res = await request.get<ApiResult<OrderConfirmVO>>('/api/order/confirm')
@@ -19,6 +20,11 @@ export async function submitOrder(addressId: string, remark?: string): Promise<O
         addressId,
         remark,
     })
+    return unwrap(res)
+}
+
+export async function buyNow(dto: DirectOrderSubmitDTO): Promise<OrderSubmitVO> {
+    const res = await request.post<ApiResult<OrderSubmitVO>>('/api/order/buy-now', dto)
     return unwrap(res)
 }
 

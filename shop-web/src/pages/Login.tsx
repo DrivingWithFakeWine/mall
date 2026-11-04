@@ -10,17 +10,12 @@ export default function Login() {
     const handleFinsh = async (values: LoginParams) => {
         setLoading(true)
         try {
-            const res = await loginApi(values)
-            if (res.code === 200) {
-                localStorage.setItem('token', res.data.accessToken)
-                message.success('登录成功')
-                // 跳 首页 ， 还未完成
-                navigate('/home')
-            } else {
-                message.error(res.message)
-            }
-        } catch {
-            message.error('网络异常，稍后重试')
+            const data = await loginApi(values)
+            localStorage.setItem('token', data.accessToken)
+            message.success('登录成功')
+            navigate('/home')
+        } catch (e) {
+            message.error((e as Error).message || '登录失败')
         } finally {
             setLoading(false)
         }

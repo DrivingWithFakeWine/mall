@@ -155,6 +155,7 @@ CREATE TABLE `orders` (
   `order_no`      VARCHAR(32)   NOT NULL COMMENT '订单号（展示用，全局唯一）',
   `user_id`       BIGINT        NOT NULL COMMENT '下单用户id',
   `merchant_id`   BIGINT        NOT NULL DEFAULT 0 COMMENT '商家id（单商家阶段固定0，多商家时用于拆单）',
+  `activity_id`   BIGINT        DEFAULT NULL COMMENT '秒杀活动id（普通订单为 NULL）',
   `total_amount`  DECIMAL(10,2) NOT NULL COMMENT '订单总额（快照）',
   `pay_amount`    DECIMAL(10,2) NOT NULL COMMENT '应付金额',
   `status`        TINYINT       NOT NULL DEFAULT 0 COMMENT '0待支付 1已支付 2已发货 3已完成 4已取消',
@@ -167,6 +168,7 @@ CREATE TABLE `orders` (
   `deleted`       TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_no` (`order_no`),
+  UNIQUE KEY `uk_activity_user` (`activity_id`, `user_id`),
   KEY `idx_user_status` (`user_id`, `status`),
   KEY `idx_status_expire` (`status`, `expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单主表';
@@ -220,4 +222,24 @@ CREATE TABLE `order_address` (
   `create_time`    DATETIME     NOT NULL COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order` (`order_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '订单收货地址快照';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单收货地址快照';
+
+CREATE TABLE `seckill_activity` (
+  `id`              BIGINT        NOT NULL COMMENT '主键（雪花ID）',
+  `spu_id`          BIGINT        NOT NULL COMMENT '商品SPU id',
+  `sku_id`          BIGINT        NOT NULL COMMENT '商品SKU id',
+  `name`            VARCHAR(100)  NOT NULL COMMENT '活动名称（展示用）',
+  `seckill_price`   DECIMAL(10,2) NOT NULL COMMENT '秒杀价',
+  `total_stock`     INT           NOT NULL COMMENT '活动总库存',
+  `available_stock` INT           NOT NULL COMMENT '可用库存（条件更新扣减）',
+  `per_user_limit`  INT           NOT NULL DEFAULT 1 COMMENT '每人限购数量（MVP 固定 1）',
+  `start_time`      DATETIME      NOT NULL COMMENT '活动开始时间',
+  `end_time`        DATETIME      NOT NULL COMMENT '活动结束时间',
+  `status`          TINYINT       NOT NULL DEFAULT 1 COMMENT '0下线 1上线',
+  `create_time`     DATETIME      NOT NULL COMMENT '创建时间',
+  `update_time`     DATETIME      NOT NULL COMMENT '更新时间',
+  `deleted`         TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删除 1已删除',
+  PRIMARY KEY (`id`),
+  KEY `idx_status_time` (`status`, `start_time`, `end_time`),
+  KEY `idx_sku` (`sku_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀活动';

@@ -3,18 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button, Descriptions, Empty, Popconfirm, Spin, Tag, message } from 'antd'
 import { cancelOrder, getOrderDetail, payOrder, type OrderDetailVO } from '../api/order'
 import { orderStatusColor, orderStatusText } from '../utils/orderStatus'
+import { formatCountdown } from '../utils/countdown'
 import ImageBox from '../components/ImageBox'
 import './OrderDetail.css'
-
-function formatCountdown(ms: number): string {
-    if (ms <= 0) return '已超时'
-    const totalSeconds = Math.floor(ms / 1000)
-    const hours = Math.floor(totalSeconds / 3600)
-    const minutes = Math.floor((totalSeconds % 3600) / 60)
-    const seconds = totalSeconds % 60
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
-}
 
 export default function OrderDetailPage() {
     const { id } = useParams<{ id: string }>()

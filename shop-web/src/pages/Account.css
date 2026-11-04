@@ -1,0 +1,89 @@
+.account-page {
+    min-height: 100vh;
+    background: #f5f5f5;
+    text-align: left;
+    padding-bottom: 40px;
+}
+
+.account-header {
+    height: 56px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 24px;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.account-logo {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1f1f1f;
+    text-decoration: none;
+}
+
+.account-title {
+    font-size: 15px;
+    color: #666;
+}
+
+.account-nav {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 14px;
+}
+
+.account-nav a {
+    color: #555;
+    text-decoration: none;
+}
+
+.account-main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px 24px;
+}
+
+.account-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 16px;
+}
+
+.account-card-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f1f1f;
+    margin-bottom: 16px;
+}
+
+.account-username {
+    color: #888;
+    font-size: 13px;
+    margin-bottom: 16px;
+}
+
+.account-card form {
+    max-width: 380px;
+}
+
+.account-links {
+    display: flex;
+    gap: 24px;
+    font-size: 14px;
+}
+
+.account-links a {
+    color: #ff4d4f;
+    text-decoration: none;
+}
+
+.account-loading {
+    min-height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

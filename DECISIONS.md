@@ -9,7 +9,7 @@
 > 一句话触发词：**改表、改架构、改契约、升依赖——先读 DECISIONS.md。**
 >
 > 状态标记：✅ 已执行 ｜ ⏳ 待决定
-> 最后更新：2026-10-26
+> 最后更新：2026-11-03
 
 ---
 
@@ -51,6 +51,23 @@
 | 开发代理 | 前端 `/api` → `http://localhost:8080`（vite.config.ts） |
 | 接口文档 | `http://localhost:8080/swagger-ui.html` |
 
+**用户账户与立即购买（2026-11-03 实现 ✅，本次未改表）**
+- 用户接口已补入契约：`POST /user/register`、`POST /user/login`、`GET /user/me`、`PUT /user/profile`、`PUT /user/password`；`UserVO` 增加 `telephone`
+- 资料修改的手机号：空串或 null 都表示清空（存 NULL，`uk_telephone` 允许多个 NULL，只允许一个空串）；冲突返回「手机号已被使用」
+- 改密需校验旧密码；**JWT 无状态，改密后旧 token 仍有效直到过期**（未做 token 吊销，属已知取舍）
+- 退出登录只清前端 token，不新增后端接口
+- 立即购买：`POST /order/buy-now`，单 SKU 直购，不经购物车、不删除购物车项；数量 1-99，事务内条件扣库存并生成订单/明细/地址快照
+- 前端路由：`/account`（资料/改密/快捷入口）、`/address`（地址增删改、设默认）；下单弹窗统一用 `AddressSelectModal` + `AddressFormModal`
+- 登录态组件 `UserNav` 读取 `/user/me`，资料保存后通过 `user-profile-updated` 事件刷新头部昵称
+
+**关键字搜索（2026-11-03 实现 ✅，阶段 1）**
+- 商品：`GET /product/list?keyword=`，`name LIKE %kw% OR subtitle LIKE %kw% OR category_id IN (命中的分类)`，与分类筛选叠加；关键字存在时**绕过总数缓存**，交给数据库 COUNT
+- 分类名也参与匹配：命中一级分类时自动带上其子分类（`ProductSearchSupport`），所以搜“手机”能搜到挂在「手机」分类下的 iPhone
+- 秒杀：`GET /seckill/list?keyword=`，匹配活动名，或按商品名/副标题/分类名查到 spuId（上限 200）再回查活动
+- 统一用 `LikeUtils.normalize` 去空白、限长 50、转义 `%`/`_`/`\`，防止通配符退化成全表匹配
+- 前端 `SearchBar` 放在首页与秒杀页头部中间，关键字写入 URL `?keyword=`，可清空、可翻页、可与分类叠加
+- 演进（按数据量/瓶颈触发）：LIKE 基线 → MySQL FULLTEXT ngram → ES；触发条件见 `HANDOFF.md`
+
 ## 4. 数据库设计 ✅（2026-10-26 确定）
 
 **已定方向**
@@ -85,6 +102,36 @@
 - `order_address` 为**不可变快照**（无 update_time / deleted），每单一条 `uk(order_id)`；用户改地址不影响历史订单
 - 库存两阶段：下单 available−n / locked+n，支付 locked−n，取消或超时 available+n / locked−n
 - 下单必须在一个事务内完成：校验购物车 → 条件扣库存（`WHERE available_stock >= n`）→ 建订单/明细/地址快照 → 删除已下单购物车项
+
+**订单超时自动取消（2026-11-03 设计并实现 ✅）**
+- 实现位置：`task/OrderTimeoutTask` 负责循环，`OrderServiceImpl.cancelExpiredOrder` 负责单笔事务；库存释放抽取为 `releaseLockedStock`，与用户取消共用
+- 测试：`OrderTimeoutCancelTest` 7 个用例（过期取消、未过期、已支付、幂等、过期不可支付、并发取消只释放一次、扫描过滤与 limit）
+- **方案**：单体阶段用 `@Scheduled` 定时扫表，不引入 MQ（分布式组件应由压测瓶颈驱动，而非提前堆砌）
+- **扫描**：`status = 0 AND expire_time < NOW()`，按 `expire_time` 排序、`LIMIT batchSize`（默认 100），只查 `id`；已有 `idx_status_expire (status, expire_time)` 覆盖，无需改表
+- **单轮只处理一批**，剩余留给下一轮（`fixedDelay` 默认 60s）：失败订单回滚后仍是 `status = 0`，单轮 `while` 扫到底会死循环
+- **事务边界**：定时任务类只做循环，单笔取消的事务方法放 `OrderServiceImpl`，经接口调用走代理——同内调用 `@Transactional` 不生效
+- **状态迁移**：`WHERE id = ? AND status = 0 AND expire_time < NOW()` 条件更新为已取消并写 `cancel_time`；`rows = 0` 视为已被支付/取消，正常跳过。条件更新天然幂等，库存只释放一次
+- **库存释放**：与用户主动取消共用 `releaseLockedStock(orderId)`（`available + n`、`locked - n`，`WHERE locked_stock >= n`），影响 0 行抛异常回滚本单
+- **与支付互斥**：`pay` 的条件更新补 `expire_time > NOW()`，让"是否过期"也在同一条 UPDATE 上原子判定，支付与超时取消在同一行锁上排队
+- **用户主动取消**不加过期条件（过期未清扫的单仍允许用户自己取消）
+- **日志**：每轮一条 INFO 汇总（候选/取消/失败），订单级异常 WARN 带 `orderNo`；prod 的 `com.dking.shop: warn` 会吞掉汇总，需给定时任务包单独设 info
+- **多实例**：条件更新保证正确性；重复扫描只是浪费，扩容后再上 ShedLock 或延迟消息
+- **演进触发条件**（满足任一即换 RabbitMQ 延迟队列 / Redis ZSET 到期集合）：单轮扫描耗时 > 间隔的一半，或过期订单积压持续 > 1000 单
+- **秒杀扩展**：秒杀订单复用该取消方法时，`releaseLockedStock` 需按订单类型分派额外回滚活动库存，现在不提前塞入
+- 其余约定见上方各条
+
+**秒杀模块 MVP（2026-11-03 设计并实现 ✅，后端）**
+- **数据模型**：新增 `seckill_activity`（`spu_id`/`sku_id`/`seckill_price`/`total_stock`/`available_stock`/`per_user_limit`/时间窗/`status`）；秒杀订单**复用 `orders`**，加 `activity_id`（普通单为 NULL）与 `UNIQUE KEY uk_activity_user (activity_id, user_id)`
+- **唯一键同时承担幂等与限购**：MVP 每人每活动限 1 单；**取消后不能再次购买**（产品语义已确认）。后续要做「每人限 N 件」时改为独立计数表
+- **库存独立**：活动库存不预扣 `product_stock`；支付只累加 `sku/spu.sales`，取消/超时只归还 `available_stock`（且不突破 `total_stock`）。库存对账留到后续阶段
+- **防超卖**：单事务内 `UPDATE seckill_activity SET available_stock = available_stock - 1 WHERE id=? AND status=1 AND start_time<=NOW() AND end_time>NOW() AND available_stock>=1`；不加本地锁，唯一键负责同用户并发
+- **订单号**：秒杀单用 `"SK" + 雪花 ID`，避免原「秒 14 位 + 4 位随机」在峰值下撞 `uk_order_no`
+- **接口**：`GET /seckill/list`、`GET /seckill/{id}`（公开）、`POST /seckill/{id}/order`（登录）；phase 0 未开始 / 1 进行中 / 2 已结束 / 3 已售罄；详情返回 `serverTime` 供前端倒计时
+- **分派点**：`pay`/`cancel`/`cancelExpiredOrder` 按 `activity_id` 区分库存来源（`releaseOrderStock`）
+- **测试**：`SeckillOrderTest` 7 个用例（100 线程抢 10 件、同用户并发只成 1 单、未开始/结束/下线/售罄、支付只加销量、超时与用户取消归还活动库存、列表与详情）
+- **压测演进触发条件**：活动行锁等待明显、MySQL CPU 持续 > 60%、加线程无吞吐提升 → Redis 预热 + Lua 扣减；下单事务写占比高 → MQ 异步下单；刷单 → 网关限流 + 防刷
+- **前端**：`/seckill` 主页面（活动卡片、倒计时、抢购弹窗选地址）+ 首页头部醒目入口，2026-11-03 完成
+- **未做**：压测基线、管理端活动维护
 
 **全表通用规则**
 - 主键：雪花 ID `BIGINT`，**无自增**；MyBatis-Plus 全局 `assign_id`
@@ -124,3 +171,16 @@
 - 忽略：`Shop/target/`、`shop-web/node_modules/`、`shop-web/dist/`、**`application-local.yaml`（含数据库密码）**、`.idea/`、`.claude/`
 - 占位模板 `application-local.example.yaml` 入库，新人复制后填密码
 - SQL 脚本统一放项目根 `sql/` 目录，作为项目资产
+
+## 7. 压测结论（2026-11-04）✅
+
+- **口径**：应用 2C4G + RDS，JMeter 独立 2C4G；吞吐基线**关闭 JFR 与 GC 日志**，预热约 12 分钟（约 6 轮 × 120s）后测量；否则 50 线程只有 130～250 QPS
+- **S0 商品列表**：50 线程 **432 QPS**，avg 112ms，p99 244ms，0 错误（旧基线 395～415）
+- **S1 秒杀争抢**：500 用户、ramp 0、每人 1 次抢库存 10，8 秒完成，成功 10 单、库存 0、无重复用户；p50 5.2s，max 6.9s
+- **S2 秒杀容量**：库存 500，100/300/500 线程；100 线程全成功；300/500 线程分别成功 236/372，出现 64/128 个 HTTP 500，原因是 **Hikari 20 + connectionTimeout 3000ms** 被打满（Tomcat busy 峰值 200、Hikari pending 179、DB 行锁等待 18），无超卖
+- **S3 纯非热点**：100 线程、ramp 10s、180s，列表/详情随机；列表 p99 780ms，详情 p99 1667ms
+- **S4 混合（80/20、90/10）**：400+100 / 450+50 线程，240s / 180s；突发窗口内冷请求 p99 从 0.8s/1.6s 升到 6.36～7.63s / 8.07～8.15s，**劣化 6～10 倍**，超过 50% 触发线；突发结束后回落到 0.45～0.79s / 0.9～1.59s
+- **决策**：优先做 **Redis 预扣 + Lua**（减少热点行锁与事务持连接时间），再做热点隔离/限流保护冷流量；MQ 异步下单放在之后
+- **监控口径**：JFR 与 GC 文件日志会显著拉低 2C 机器 QPS，已拆到 `docker-compose.profiling.yml`，只用于找热点，不与吞吐基线混跑
+- 线上 RDS 已执行秒杀迁移；压测数据脚本与 JMeter 计划在 `deploy/loadtest/`
+- **压测产物**：本地 `loadtest-reports/2026-11-04_c90322a-dirty/`（`summary.csv` + `results/*.jtl` + `reports/*` HTML + `MANIFEST.md`），压测机 `/opt/loadtest/results|reports/` 保留原始副本；报告目录按 `日期_git版本[-dirty]` 命名

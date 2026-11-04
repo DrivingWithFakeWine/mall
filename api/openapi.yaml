@@ -24,8 +24,133 @@ tags:
     description: 订单（需登录）
   - name: Address
     description: 收货地址（需登录）
+  - name: User
+    description: 用户账户（注册/登录/资料/密码）
+  - name: Seckill
+    description: 秒杀活动
 
 paths:
+  /user/register:
+    post:
+      tags: [User]
+      summary: 注册
+      description: 用户名 4-16 位字母开头；手机号可空，非空时必须唯一。
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterDTO' }
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 参数校验失败或用户名/手机号已存在
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /user/login:
+    post:
+      tags: [User]
+      summary: 登录
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginDTO' }
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiLogin' }
+        '400':
+          description: 用户名或密码错误，或账号被封禁
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /user/me:
+    get:
+      tags: [User]
+      summary: 当前用户信息
+      operationId: getCurrentUser
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiUser' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /user/profile:
+    put:
+      tags: [User]
+      summary: 修改昵称与手机号
+      description: 手机号传空串或 null 表示清空；非空时不能与其他账号重复。
+      operationId: updateProfile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileUpdateDTO' }
+      responses:
+        '200':
+          description: 修改成功，返回最新资料
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiUser' }
+        '400':
+          description: 参数校验失败或手机号已被使用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /user/password:
+    put:
+      tags: [User]
+      summary: 修改密码
+      description: 校验旧密码后更新；修改成功后旧 token 仍可用，直到过期。
+      operationId: changePassword
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordChangeDTO' }
+      responses:
+        '200':
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiVoid' }
+        '400':
+          description: 旧密码错误或新密码不符合规则
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
   /category/tree:
     get:
       tags: [Category]
@@ -83,6 +208,11 @@ paths:
           description: 分类 id（一级或二级），不传则全部
           schema: { type: string }
           example: '1900000000000000011'
+        - name: keyword
+          in: query
+          description: 关键字，匹配商品名称或副标题；为空表示不筛选
+          schema: { type: string, maxLength: 50 }
+          example: iPhone
       responses:
         '200':
           description: 成功
@@ -447,6 +577,42 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
+  /order/buy-now:
+    post:
+      tags: [Order]
+      summary: 立即购买（单 SKU 直购）
+      description: |
+        需登录。不经过购物车：校验地址归属、SKU 上下架与库存 → 条件扣库存（available−n、locked+n）
+        → 生成订单/明细/地址快照，同一事务内完成。数量上限 99，且不能超过可用库存。
+      operationId: buyNow
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DirectOrderSubmitDTO' }
+            example:
+              skuId: '1920000000000000001'
+              quantity: 1
+              addressId: '2115000000000000001'
+              remark: 立即购买
+      responses:
+        '200':
+          description: 下单成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiOrderSubmit' }
+        '400':
+          description: 商品不存在/已下架、库存不足或地址不存在
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
   /order/list:
     get:
       tags: [Order]
@@ -775,6 +941,99 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
+  /seckill/list:
+    get:
+      tags: [Seckill]
+      summary: 秒杀活动列表
+      description: 上线且未结束的活动，按开始时间升序；公开接口。keyword 匹配活动名或商品名。
+      operationId: listSeckillActivities
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1, minimum: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10, minimum: 1, maximum: 50 }
+        - name: keyword
+          in: query
+          description: 关键字，匹配活动名称或商品名称
+          schema: { type: string, maxLength: 50 }
+          example: iPhone
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSeckillList' }
+
+  /seckill/{id}:
+    get:
+      tags: [Seckill]
+      summary: 秒杀活动详情
+      description: 上线中的活动详情；serverTime 用于前端倒计时校正，避免客户端时钟偏差。
+      operationId: getSeckillActivity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSeckillDetail' }
+        '404':
+          description: 活动不存在或已下线
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /seckill/{id}/order:
+    post:
+      tags: [Seckill]
+      summary: 秒杀下单
+      description: |
+        需登录。数量固定 1，同一用户同一活动只能成功一单（唯一键兜底）。
+        条件扣减活动库存 `available_stock >= 1`，与商品库存 product_stock 相互独立；
+        支付只累加销量，取消与超时取消归还活动库存。
+      operationId: submitSeckillOrder
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeckillOrderDTO' }
+            example:
+              addressId: '2115000000000000001'
+              remark: 秒杀
+      responses:
+        '200':
+          description: 下单成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiOrderSubmit' }
+        '400':
+          description: 活动未开始/已结束/售罄、商品下架、重复提交或地址不存在
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 活动不存在或已下线
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -998,6 +1257,110 @@ components:
           nullable: true
           allOf:
             - $ref: '#/components/schemas/UserAddressVO'
+
+    RegisterDTO:
+      type: object
+      required: [username, nickname, password]
+      properties:
+        username:
+          type: string
+          pattern: '^[a-zA-Z][a-zA-Z0-9_]{3,15}$'
+          description: 4-16 位，字母开头
+          example: doroshop01
+        nickname:
+          type: string
+          minLength: 2
+          maxLength: 12
+        password:
+          type: string
+          minLength: 6
+          maxLength: 20
+          format: password
+        telephone:
+          type: string
+          nullable: true
+          pattern: '^$|^1[3-9]\d{9}$'
+          description: 手机号，可为空；非空时必须唯一
+          example: '13800138000'
+
+    LoginDTO:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+
+    LoginVO:
+      type: object
+      required: [accessToken, userId, nickname]
+      properties:
+        accessToken: { type: string, description: JWT，请求头 Bearer }
+        userId: { type: string }
+        nickname: { type: string }
+
+    UserVO:
+      type: object
+      required: [id, username, nickname]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        nickname: { type: string }
+        telephone: { type: string, nullable: true }
+        avatar: { type: string, nullable: true }
+
+    ProfileUpdateDTO:
+      type: object
+      required: [nickname]
+      properties:
+        nickname:
+          type: string
+          minLength: 2
+          maxLength: 12
+        telephone:
+          type: string
+          nullable: true
+          pattern: '^$|^1[3-9]\d{9}$'
+          description: 传空串或 null 表示清空
+
+    PasswordChangeDTO:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword: { type: string, format: password }
+        newPassword:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 20
+
+    DirectOrderSubmitDTO:
+      type: object
+      required: [skuId, addressId, quantity]
+      properties:
+        skuId: { type: string, description: 要购买的 SKU id }
+        addressId: { type: string, description: 收货地址 id }
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+          default: 1
+        remark: { type: string, maxLength: 255 }
+
+    ApiLogin:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/LoginVO' }
+
+    ApiUser:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/UserVO' }
 
     OrderSubmitVO:
       type: object
@@ -1283,6 +1646,68 @@ components:
         code: { type: integer, example: 200 }
         message: { type: string, example: success }
         data: { $ref: '#/components/schemas/ProductDetail' }
+
+    SeckillActivityListItem:
+      type: object
+      required: [id, spuId, skuId, name, productName, seckillPrice, totalStock, availableStock, startTime, endTime, phase]
+      properties:
+        id: { type: string }
+        spuId: { type: string }
+        skuId: { type: string }
+        name: { type: string, description: 活动名称 }
+        productName: { type: string, description: 商品名称 }
+        image: { type: string, nullable: true }
+        specDesc: { type: string, nullable: true }
+        seckillPrice: { type: number, format: double }
+        originalPrice: { type: number, format: double, nullable: true }
+        totalStock: { type: integer }
+        availableStock: { type: integer }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        phase:
+          type: integer
+          description: '0 未开始 / 1 进行中 / 2 已结束 / 3 已售罄'
+
+    SeckillActivityDetail:
+      allOf:
+        - $ref: '#/components/schemas/SeckillActivityListItem'
+        - type: object
+          required: [perUserLimit, serverTime]
+          properties:
+            perUserLimit: { type: integer, description: 每人限购数量 }
+            serverTime: { type: string, format: date-time, description: 服务器当前时间 }
+
+    SeckillPage:
+      type: object
+      required: [total, records]
+      properties:
+        total: { type: integer }
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/SeckillActivityListItem' }
+
+    SeckillOrderDTO:
+      type: object
+      required: [addressId]
+      properties:
+        addressId: { type: string, description: 收货地址 id }
+        remark: { type: string, maxLength: 255 }
+
+    ApiSeckillList:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/SeckillPage' }
+
+    ApiSeckillDetail:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/SeckillActivityDetail' }
 
     ApiError:
       type: object

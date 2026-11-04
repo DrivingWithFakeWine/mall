@@ -15,6 +15,15 @@ app:
     secret: ${JWT_SECRET:doroshop-jwt-secret-at-least-32-chars!!}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
+shop:
+  order:
+    timeout:
+      # 订单超时取消：每轮扫一批，处理完再等下一轮
+      enabled: true
+      scan-interval-ms: 60000
+      initial-delay-ms: 30000
+      batch-size: 100
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true      # 下划线转驼峰（MP 默认开启，显式写出心里有数）

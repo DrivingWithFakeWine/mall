@@ -13,3 +13,9 @@ mybatis-plus:
   configuration:
     # 20 线程 × 多条 SQL 的控制台输出会淹没测试结果
     log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+shop:
+  order:
+    timeout:
+      # 测试中关闭定时扫描，避免后台任务干扰用例；验证逻辑时直接调 OrderService
+      enabled: false

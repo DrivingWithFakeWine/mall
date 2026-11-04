@@ -1,6 +1,34 @@
 .home-page { min-height: 100vh; background: #f5f5f5; }
 .home-header { height: 56px; background: #fff; display: flex; align-items: center; padding: 0 24px; font-size: 20px; font-weight: 700; }
 .home-nav { margin-left: auto; display: flex; gap: 20px; font-size: 14px; font-weight: 400; }
+.home-search {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+    padding: 0 16px;
+}
+.seckill-entry {
+    margin-left: 16px;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    text-decoration: none;
+    background: linear-gradient(135deg, #ff7875, #ff4d4f);
+    box-shadow: 0 4px 12px rgba(255, 77, 79, 0.35);
+    animation: seckill-pulse 2s ease-in-out infinite;
+    transition: transform 0.15s ease;
+}
+.seckill-entry:hover {
+    color: #fff;
+    transform: translateY(-1px);
+}
+@keyframes seckill-pulse {
+    0%, 100% { box-shadow: 0 4px 12px rgba(255, 77, 79, 0.35); }
+    50% { box-shadow: 0 4px 20px rgba(255, 77, 79, 0.7); }
+}
 .home-body { display: flex; gap: 16px; padding: 16px 24px; align-items: flex-start; }
 .home-sidebar { width: 200px; background: #fff; border-radius: 8px; overflow: hidden; }
 .home-content { flex: 1; min-height: 300px; background: #fff; border-radius: 8px; padding: 24px; }

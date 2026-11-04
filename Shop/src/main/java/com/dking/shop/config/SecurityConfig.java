@@ -29,7 +29,7 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/user/register", "/user/login").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/category/**", "/product/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/category/**", "/product/**", "/seckill/**").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults())
                 );

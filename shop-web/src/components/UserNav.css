@@ -1,0 +1,32 @@
+.user-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-nav a {
+    color: #555;
+    text-decoration: none;
+}
+
+.user-nav a:hover {
+    color: #ff4d4f;
+}
+
+.user-nav-name {
+    font-weight: 600;
+    color: #1f1f1f !important;
+}
+
+.user-nav-logout {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: inherit;
+    color: #999;
+    cursor: pointer;
+}
+
+.user-nav-logout:hover {
+    color: #ff4d4f;
+}

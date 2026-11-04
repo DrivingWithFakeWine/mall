@@ -7,6 +7,9 @@ import CartPage from './pages/Cart.tsx'
 import CheckoutPage from './pages/Checkout.tsx'
 import OrderDetailPage from './pages/OrderDetail.tsx'
 import OrdersPage from './pages/Orders.tsx'
+import SeckillPage from './pages/Seckill.tsx'
+import AccountPage from './pages/Account.tsx'
+import AddressesPage from './pages/Addresses.tsx'
 
 function App() {
   return (
@@ -16,11 +19,14 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/home" element={<Home />} />
+          <Route path="/seckill" element={<SeckillPage />} />
           <Route path="/product/:id" element={<ProductDetailPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order/:id" element={<OrderDetailPage />} />
           <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/account" element={<AccountPage />} />
+          <Route path="/address" element={<AddressesPage />} />
         </Routes>
       </BrowserRouter>
   )

@@ -13,16 +13,11 @@ export default function Register() {
     const handleFinsh = async (values: RegisterParams) => {
         setLoading(true)
         try {
-            const res = await registerApi(values)
-            if (res.code === 200) {
-                // 跳转到登录界面，并自动填写好username 和 password
-                navigate('/login')
-                message.success('注册成功')
-            } else {
-                message.error(res.message)
-            }
-        } catch {
-            message.error('网络异常，稍后重试')
+            await registerApi(values)
+            message.success('注册成功')
+            navigate('/login')
+        } catch (e) {
+            message.error((e as Error).message || '注册失败')
         } finally {
             setLoading(false)
         }

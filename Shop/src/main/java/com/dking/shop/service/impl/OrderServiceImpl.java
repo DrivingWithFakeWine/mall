@@ -3,6 +3,7 @@ package com.dking.shop.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.dking.shop.dto.DirectOrderSubmitDTO;
 import com.dking.shop.dto.OrderSubmitDTO;
 import com.dking.shop.entity.Cart;
 import com.dking.shop.entity.Order;
@@ -11,6 +12,7 @@ import com.dking.shop.entity.OrderItem;
 import com.dking.shop.entity.ProductSku;
 import com.dking.shop.entity.ProductSpu;
 import com.dking.shop.entity.ProductStock;
+import com.dking.shop.entity.SeckillActivity;
 import com.dking.shop.entity.UserAddress;
 import com.dking.shop.exception.BusinessException;
 import com.dking.shop.exception.NotFoundException;
@@ -21,6 +23,7 @@ import com.dking.shop.mapper.OrderMapper;
 import com.dking.shop.mapper.ProductSkuMapper;
 import com.dking.shop.mapper.ProductSpuMapper;
 import com.dking.shop.mapper.ProductStockMapper;
+import com.dking.shop.mapper.SeckillActivityMapper;
 import com.dking.shop.mapper.UserAddressMapper;
 import com.dking.shop.service.OrderService;
 import com.dking.shop.vo.ConfirmItemVO;
@@ -63,6 +66,7 @@ public class OrderServiceImpl implements OrderService {
     private static final Long SINGLE_MERCHANT_ID = 0L;
     private static final int PAY_TIMEOUT_MINUTES = 30;
     private static final int MAX_PAGE_SIZE = 50;
+    private static final int MAX_TIMEOUT_BATCH_SIZE = 1000;
 
     private static final DateTimeFormatter ORDER_NO_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
@@ -90,6 +94,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Resource
     private OrderAddressMapper orderAddressMapper;
+
+    @Resource
+    private SeckillActivityMapper seckillActivityMapper;
 
     @Resource
     private TransactionTemplate transactionTemplate;
@@ -334,6 +341,94 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderSubmitVO submitDirect(Long userId, DirectOrderSubmitDTO dto) {
+        // ① 地址必须属于当前用户（防越权）
+        UserAddress address = userAddressMapper.selectOne(
+                new LambdaQueryWrapper<UserAddress>()
+                        .eq(UserAddress::getId, dto.getAddressId())
+                        .eq(UserAddress::getUserId, userId));
+        if (address == null) {
+            throw new BusinessException("收货地址不存在");
+        }
+
+        // ② 商品可售校验
+        ProductSku sku = productSkuMapper.selectById(dto.getSkuId());
+        if (sku == null) {
+            throw new BusinessException("商品不存在");
+        }
+        ProductSpu spu = productSpuMapper.selectById(sku.getSpuId());
+        if (spu == null) {
+            throw new BusinessException("商品不存在");
+        }
+        if (!SKU_STATUS_ON.equals(sku.getStatus()) || !SPU_STATUS_ON.equals(spu.getStatus())) {
+            throw new BusinessException("商品已下架");
+        }
+
+        // ③ 原子扣库存：available-n、locked+n；影响 0 行说明库存不足
+        int quantity = dto.getQuantity();
+        int rows = productStockMapper.update(null,
+                new LambdaUpdateWrapper<ProductStock>()
+                        .eq(ProductStock::getSkuId, sku.getId())
+                        .ge(ProductStock::getAvailableStock, quantity)
+                        .setSql("available_stock = available_stock - " + quantity)
+                        .setSql("locked_stock = locked_stock + " + quantity));
+        if (rows == 0) {
+            throw new BusinessException("库存不足：" + spu.getName());
+        }
+
+        // ④ 生成订单（不经购物车，不删除任何购物车项）
+        LocalDateTime now = LocalDateTime.now();
+        String orderNo = generateOrderNo(now);
+        BigDecimal amount = sku.getPrice().multiply(BigDecimal.valueOf(quantity));
+
+        Order order = new Order();
+        order.setOrderNo(orderNo);
+        order.setUserId(userId);
+        order.setMerchantId(SINGLE_MERCHANT_ID);
+        order.setTotalAmount(amount);
+        order.setPayAmount(amount);
+        order.setStatus(ORDER_STATUS_WAIT_PAY);
+        order.setExpireTime(now.plusMinutes(PAY_TIMEOUT_MINUTES));
+        order.setRemark(dto.getRemark());
+        orderMapper.insert(order);
+
+        OrderItem item = new OrderItem();
+        item.setOrderId(order.getId());
+        item.setOrderNo(orderNo);
+        item.setSpuId(sku.getSpuId());
+        item.setSkuId(sku.getId());
+        item.setProductName(spu.getName());
+        item.setSpecDesc(sku.getSpecDesc());
+        item.setImage(sku.getImage() != null ? sku.getImage() : spu.getMainImage());
+        item.setPrice(sku.getPrice());
+        item.setQuantity(quantity);
+        item.setTotalAmount(amount);
+        orderItemMapper.insert(item);
+
+        OrderAddress orderAddress = new OrderAddress();
+        orderAddress.setOrderId(order.getId());
+        orderAddress.setReceiverName(address.getReceiverName());
+        orderAddress.setReceiverPhone(address.getReceiverPhone());
+        orderAddress.setProvince(address.getProvince());
+        orderAddress.setCity(address.getCity());
+        orderAddress.setDistrict(address.getDistrict());
+        orderAddress.setDetail(address.getDetail());
+        orderAddressMapper.insert(orderAddress);
+
+        log.info("立即购买下单成功, userId={}, orderNo={}, skuId={}, quantity={}, payAmount={}",
+                userId, orderNo, sku.getId(), quantity, amount);
+
+        OrderSubmitVO vo = new OrderSubmitVO();
+        vo.setOrderId(order.getId());
+        vo.setOrderNo(orderNo);
+        vo.setPayAmount(amount);
+        vo.setStatus(ORDER_STATUS_WAIT_PAY);
+        vo.setExpireTime(order.getExpireTime());
+        return vo;
+    }
+
+    @Override
     public PageVO<OrderListItemVO> list(Long userId, int page, int size, Integer status) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
@@ -451,24 +546,28 @@ public class OrderServiceImpl implements OrderService {
                 .eq(Order::getId, orderId)
                 .eq(Order::getUserId, userId)
                 .eq(Order::getStatus, ORDER_STATUS_WAIT_PAY)
+                .gt(Order::getExpireTime, now)
                 .set(Order::getStatus, ORDER_STATUS_PAID)
                 .set(Order::getPayTime, now));
         if (rows == 0) {
             throw new BusinessException("订单状态不允许支付");
         }
 
-        // ② 释放锁定库存（available 已在下单时扣过，这里只减 locked）+ 累加销量
+        // ② 释放锁定库存（普通订单）+ 累加销量；秒杀订单的库存在活动池，这里只加销量
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
+        boolean fromSeckill = order.getActivityId() != null;
 
         for (OrderItem item : items) {
-            int updated = productStockMapper.update(null,
-                    new LambdaUpdateWrapper<ProductStock>()
-                            .eq(ProductStock::getSkuId, item.getSkuId())
-                            .ge(ProductStock::getLockedStock, item.getQuantity())
-                            .setSql("locked_stock = locked_stock - " + item.getQuantity()));
-            if (updated == 0) {
-                throw new BusinessException("库存数据异常，请联系客服");
+            if (!fromSeckill) {
+                int updated = productStockMapper.update(null,
+                        new LambdaUpdateWrapper<ProductStock>()
+                                .eq(ProductStock::getSkuId, item.getSkuId())
+                                .ge(ProductStock::getLockedStock, item.getQuantity())
+                                .setSql("locked_stock = locked_stock - " + item.getQuantity()));
+                if (updated == 0) {
+                    throw new BusinessException("库存数据异常，请联系客服");
+                }
             }
 
             productSkuMapper.update(null, new LambdaUpdateWrapper<ProductSku>()
@@ -516,7 +615,74 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("订单状态不允许取消");
         }
 
-        // 回滚库存：可用 +n、锁定 -n（下单时是从 available 扣、加进 locked）
+        // 按订单来源回滚库存：普通订单归还 product_stock，秒杀订单归还活动库存
+        releaseOrderStock(order);
+
+        log.info("订单取消成功, userId={}, orderNo={}", userId, order.getOrderNo());
+    }
+
+    @Override
+    public List<Long> findExpiredWaitPayOrderIds(int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), MAX_TIMEOUT_BATCH_SIZE);
+        return orderMapper.selectList(
+                        new LambdaQueryWrapper<Order>()
+                                .select(Order::getId)
+                                .eq(Order::getStatus, ORDER_STATUS_WAIT_PAY)
+                                .lt(Order::getExpireTime, LocalDateTime.now())
+                                .orderByAsc(Order::getExpireTime)
+                                .last("LIMIT " + safeLimit))
+                .stream()
+                .map(Order::getId)
+                .toList();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean cancelExpiredOrder(Long orderId) {
+        LocalDateTime now = LocalDateTime.now();
+        // 条件更新：status + expire_time 一起判定，与 pay 的更新在同一行锁上互斥
+        int rows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, orderId)
+                .eq(Order::getStatus, ORDER_STATUS_WAIT_PAY)
+                .lt(Order::getExpireTime, now)
+                .set(Order::getStatus, ORDER_STATUS_CANCELLED)
+                .set(Order::getCancelTime, now));
+        if (rows == 0) {
+            return false;
+        }
+
+        releaseOrderStock(orderMapper.selectById(orderId));
+        log.info("订单超时取消, orderId={}", orderId);
+        return true;
+    }
+
+    /** 回滚订单对应来源的库存 */
+    private void releaseOrderStock(Order order) {
+        if (order.getActivityId() == null) {
+            releaseLockedStock(order.getId());
+        } else {
+            restoreActivityStock(order);
+        }
+    }
+
+    /** 秒杀订单取消：可用库存 +n，且不突破活动总库存 */
+    private void restoreActivityStock(Order order) {
+        List<OrderItem> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
+        int quantity = items.stream().mapToInt(OrderItem::getQuantity).sum();
+
+        int updated = seckillActivityMapper.update(null,
+                new LambdaUpdateWrapper<SeckillActivity>()
+                        .eq(SeckillActivity::getId, order.getActivityId())
+                        .apply("available_stock + {0} <= total_stock", quantity)
+                        .setSql("available_stock = available_stock + " + quantity));
+        if (updated == 0) {
+            throw new BusinessException("活动库存数据异常，请联系客服");
+        }
+    }
+
+    /** 取消/超时共用：available + n、locked - n，库存异常则整单回滚 */
+    private void releaseLockedStock(Long orderId) {
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
         for (OrderItem item : items) {
@@ -530,9 +696,6 @@ public class OrderServiceImpl implements OrderService {
                 throw new BusinessException("库存数据异常，请联系客服");
             }
         }
-
-        log.info("订单取消成功, userId={}, orderNo={}, itemCount={}",
-                userId, order.getOrderNo(), items.size());
     }
 
     private OrderItemVO toItemVO(OrderItem item) {

@@ -1,0 +1,213 @@
+.seckill-page {
+    min-height: 100vh;
+    background: #fff5f5;
+    text-align: left;
+    padding-bottom: 40px;
+}
+
+.seckill-header {
+    height: 56px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 24px;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.seckill-logo {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1f1f1f;
+    text-decoration: none;
+}
+
+.seckill-header-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #ff7875, #ff4d4f);
+    padding: 3px 10px;
+    border-radius: 999px;
+}
+
+.seckill-nav {
+    margin-left: auto;
+    display: flex;
+    gap: 20px;
+    font-size: 14px;
+}
+
+.seckill-search {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+    padding: 0 16px;
+}
+
+.seckill-nav a {
+    color: #555;
+    text-decoration: none;
+}
+
+.seckill-nav a:hover {
+    color: #ff4d4f;
+}
+
+.seckill-main {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 20px 24px 0;
+}
+
+.seckill-hero {
+    background: linear-gradient(120deg, #ff4d4f, #ff7a45);
+    color: #fff;
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 24px rgba(255, 77, 79, 0.25);
+}
+
+.seckill-hero h1 {
+    margin: 0 0 6px;
+    font-size: 30px;
+    letter-spacing: 2px;
+    color: #fff;
+    font-weight: 700;
+}
+
+.seckill-hero p {
+    margin: 0;
+    font-size: 14px;
+    opacity: 0.92;
+}
+
+.seckill-empty {
+    padding: 60px 0;
+}
+
+.seckill-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.seckill-card {
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.seckill-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(255, 77, 79, 0.16);
+}
+
+.seckill-card-inactive {
+    opacity: 0.72;
+}
+
+.seckill-cover {
+    height: 180px;
+    background: #fff1f0;
+    overflow: hidden;
+}
+
+.seckill-cover img,
+.seckill-cover .image-placeholder {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.seckill-cover .image-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 44px;
+    color: #fff;
+    background: linear-gradient(135deg, #ff9a8b, #ff6a88);
+}
+
+.seckill-card-body {
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.seckill-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f1f1f;
+}
+
+.seckill-product {
+    font-size: 12px;
+    color: #999;
+    min-height: 18px;
+}
+
+.seckill-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.seckill-price {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ff4d4f;
+}
+
+.seckill-original {
+    font-size: 13px;
+    color: #bbb;
+    text-decoration: line-through;
+}
+
+.seckill-price-row .ant-tag {
+    margin-left: auto;
+}
+
+.seckill-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #999;
+}
+
+.seckill-countdown {
+    color: #ff4d4f;
+    font-weight: 600;
+}
+
+.seckill-modal-product {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fff1f0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-weight: 600;
+}
+
+.seckill-modal-price {
+    color: #ff4d4f;
+    font-size: 18px;
+}
+
+.seckill-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+}
