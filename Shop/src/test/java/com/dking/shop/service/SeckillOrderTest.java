@@ -27,9 +27,12 @@ import com.dking.shop.vo.PageVO;
 import com.dking.shop.vo.SeckillActivityDetailVO;
 import com.dking.shop.vo.SeckillActivityListItemVO;
 import jakarta.annotation.Resource;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
@@ -63,6 +66,17 @@ class SeckillOrderTest {
 
     @Resource
     private SeckillService seckillService;
+
+    @Resource
+    private SeckillStockService seckillStockService;
+
+    @Resource
+    private StringRedisTemplate redis;
+
+    @Value("${shop.seckill.redis.prefix:doro:seckill}")
+    private String redisPrefix;
+
+    private final List<Long> createdActivityIds = new ArrayList<>();
 
     @Resource
     private OrderService orderService;
@@ -126,6 +140,17 @@ class SeckillOrderTest {
         stockId = stock.getId();
     }
 
+    @AfterEach
+    void cleanRedisKeys() {
+        String prefix = redisPrefix.endsWith(":")
+                ? redisPrefix.substring(0, redisPrefix.length() - 1)
+                : redisPrefix;
+        for (Long id : createdActivityIds) {
+            redis.delete(List.of(prefix + ":stock:" + id, prefix + ":users:" + id));
+        }
+        createdActivityIds.clear();
+    }
+
     @Test
     void concurrentSubmit_shouldNotOversell() throws Exception {
         int threads = 100;
@@ -182,6 +207,7 @@ class SeckillOrderTest {
 
         SeckillActivity activity = seckillActivityMapper.selectById(activityId);
         assertEquals(0, activity.getAvailableStock(), "活动库存应扣到 0");
+        assertEquals(0, seckillStockService.currentStock(activityId), "Redis 库存应扣到 0");
 
         Long orderCount = orderMapper.selectCount(
                 new LambdaQueryWrapper<Order>().eq(Order::getActivityId, activityId));
@@ -247,6 +273,7 @@ class SeckillOrderTest {
 
         assertEquals(4, seckillActivityMapper.selectById(activityId).getAvailableStock(),
                 "活动库存只能扣 1");
+        assertEquals(4, seckillStockService.currentStock(activityId), "Redis 库存只能扣 1");
         Long orderCount = orderMapper.selectCount(
                 new LambdaQueryWrapper<Order>().eq(Order::getActivityId, activityId));
         assertEquals(1, orderCount.intValue());
@@ -285,6 +312,30 @@ class SeckillOrderTest {
     }
 
     @Test
+    void submit_whenSkuOffShelf_shouldRollbackRedisReservation() {
+        long userId = IdWorker.getId();
+        Long activityId = createActivity(5, 1,
+                LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusHours(1));
+
+        ProductSku offShelf = new ProductSku();
+        offShelf.setId(skuId);
+        offShelf.setStatus(0);
+        productSkuMapper.updateById(offShelf);
+        try {
+            assertThrows(BusinessException.class,
+                    () -> seckillService.submit(userId, activityId, dtoOf(createAddress(userId))));
+            assertEquals(5, seckillStockService.currentStock(activityId),
+                    "事务内失败应归还 Redis 预扣");
+            assertEquals(5, seckillActivityMapper.selectById(activityId).getAvailableStock());
+        } finally {
+            ProductSku onShelf = new ProductSku();
+            onShelf.setId(skuId);
+            onShelf.setStatus(1);
+            productSkuMapper.updateById(onShelf);
+        }
+    }
+
+    @Test
     void paySeckillOrder_shouldOnlyIncreaseSales() {
         long userId = IdWorker.getId();
         Long activityId = createActivity(5, 1,
@@ -303,6 +354,7 @@ class SeckillOrderTest {
         assertEquals(salesBefore == null ? 1 : salesBefore + 1, salesAfter, "支付应累加销量");
         assertEquals(4, seckillActivityMapper.selectById(activityId).getAvailableStock(),
                 "支付不影响活动库存");
+        assertEquals(4, seckillStockService.currentStock(activityId), "支付不影响 Redis 库存");
     }
 
     @Test
@@ -322,6 +374,7 @@ class SeckillOrderTest {
         assertEquals(4, orderMapper.selectById(vo.getOrderId()).getStatus());
         assertEquals(5, seckillActivityMapper.selectById(activityId).getAvailableStock(),
                 "活动库存应归还且只归还一次");
+        assertEquals(5, seckillStockService.currentStock(activityId), "Redis 库存应归还且只归还一次");
         ProductStock stock = productStockMapper.selectById(stockId);
         assertEquals(PRODUCT_STOCK, stock.getAvailableStock());
         assertEquals(0, stock.getLockedStock());
@@ -338,6 +391,7 @@ class SeckillOrderTest {
 
         assertEquals(4, orderMapper.selectById(vo.getOrderId()).getStatus());
         assertEquals(5, seckillActivityMapper.selectById(activityId).getAvailableStock());
+        assertEquals(5, seckillStockService.currentStock(activityId), "Redis 库存应归还");
         ProductStock stock = productStockMapper.selectById(stockId);
         assertEquals(PRODUCT_STOCK, stock.getAvailableStock());
         assertEquals(0, stock.getLockedStock());
@@ -464,6 +518,8 @@ class SeckillOrderTest {
         activity.setEndTime(end);
         activity.setStatus(status);
         seckillActivityMapper.insert(activity);
+        createdActivityIds.add(activity.getId());
+        seckillStockService.initialize(activity);
         return activity.getId();
     }
 

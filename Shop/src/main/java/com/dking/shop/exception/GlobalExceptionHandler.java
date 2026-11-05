@@ -29,6 +29,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return Result.error(400, e.getMessage());
     }
 
+    // 依赖服务不可用（秒杀闸门 Redis）
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<Result<Void>> handleUnavailable(ServiceUnavailableException e) {
+        log.warn("依赖服务不可用: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Result.error(503, e.getMessage()));
+    }
+
     // 资源不存在
     @ExceptionHandler(NotFoundException.class)
     public Result<Void> handleNotFound(NotFoundException e) {

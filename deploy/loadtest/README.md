@@ -5,6 +5,8 @@
 > 两条硬规则：
 > 1. **吞吐基线必须关闭 JFR 与 GC 文件日志**（`docker-compose.yml` 已默认关闭）；剖析用 `docker-compose.profiling.yml`，结果不与基线对比。
 > 2. 每轮正式测量前，应用需预热约 **10～12 分钟**（约 6 轮 × 120s 的 50 线程商品列表），否则 QPS 会被 JIT 拉低到 130～250。
+>
+> 2026-11-05 的 Redis 对照计划见 `PLAN-2026-11-05-redis-vs-baseline.md`。
 
 ## 0. 前置检查
 
@@ -177,6 +179,8 @@ mysql -h <RDS_ENDPOINT> -u <RDS_USER> -p doro_mall < reset-test-data.sql
 - 产出：每个场景的 jtl/html、JFR、GC 日志、三类采样 CSV、结论与下一步决策。
 
 ## 6. 本次结果（2026-11-04）
+
+> 2026-11-05 的 Redis 对照结果见 `HANDOFF.md` 第 4.5 节与 `DECISIONS.md` 第 7 节；本节保留 2026-11-04 基线。
 
 完整分标签数据在 `loadtest-reports/2026-11-04_c90322a-dirty/summary.csv`（线程数、ramp、时长、活动 id、samples/errors/avg/p50/p95/p99/max）；S4 的 burst 窗口定义为测试开始后的前 15 秒。
 

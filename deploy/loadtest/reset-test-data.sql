@@ -13,7 +13,10 @@ DROP TEMPORARY TABLE tmp_lt_order_ids;
 UPDATE seckill_activity
 SET available_stock = total_stock,
     update_time = NOW()
-WHERE id BETWEEN 3900000000000000001 AND 3900000000000000006;
+WHERE id BETWEEN 3900000000000000001 AND 3900000000000000009;
+
+-- Redis 不持久化：重置后重启 redis，让库存 key 与用户占位按 DB 重新初始化。
+-- 复用同一活动 id 时如果不重启，Redis 会保留已扣减库存和用户占位，闸门会全部拒绝。
 
 SELECT '剩余压测订单' AS metric, COUNT(*) AS value
 FROM orders

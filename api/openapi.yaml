@@ -1033,6 +1033,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+        '503':
+          description: 秒杀服务暂不可用（Redis 闸门故障）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
 
 components:
   securitySchemes:

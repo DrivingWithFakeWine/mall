@@ -26,6 +26,7 @@ import com.dking.shop.mapper.ProductStockMapper;
 import com.dking.shop.mapper.SeckillActivityMapper;
 import com.dking.shop.mapper.UserAddressMapper;
 import com.dking.shop.service.OrderService;
+import com.dking.shop.service.SeckillStockService;
 import com.dking.shop.vo.ConfirmItemVO;
 import com.dking.shop.vo.OrderAddressVO;
 import com.dking.shop.vo.OrderConfirmVO;
@@ -97,6 +98,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Resource
     private SeckillActivityMapper seckillActivityMapper;
+
+    @Resource
+    private SeckillStockService seckillStockService;
 
     @Resource
     private TransactionTemplate transactionTemplate;
@@ -679,6 +683,9 @@ public class OrderServiceImpl implements OrderService {
         if (updated == 0) {
             throw new BusinessException("活动库存数据异常，请联系客服");
         }
+
+        // DB 回补成功后再加 Redis；失败只记日志，取消仍以 DB 为准
+        seckillStockService.restoreStock(order.getActivityId(), quantity);
     }
 
     /** 取消/超时共用：available + n、locked - n，库存异常则整单回滚 */

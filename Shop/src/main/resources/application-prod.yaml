@@ -7,6 +7,9 @@ spring:
       connection-timeout: 3000
   jackson:
     time-zone: Asia/Shanghai
+  data:
+    redis:
+      password: ${REDIS_PASSWORD}
 
 mybatis-plus:
   configuration:

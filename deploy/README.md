@@ -10,10 +10,12 @@ Nginx 容器 ──静态文件──► 前端 dist（React 构建产物）
   │ /api/* 反代（去掉 /api 前缀）
   ▼
 Backend 容器 :8080（Spring Boot，prod profile）
-  │ 内网 3306
-  ▼
-RDS MySQL（doro_mall）
+  │ 内网 3306            │ 容器网络 6379
+  ▼                      ▼
+RDS MySQL（doro_mall）   Redis 容器（秒杀闸门，不持久化）
 ```
+
+> `.env` 需要新增 `REDIS_PASSWORD`；Redis 不发布端口，仅 backend 通过容器网络访问。
 
 ## 服务器目录
 

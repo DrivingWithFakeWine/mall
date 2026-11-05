@@ -1,6 +1,7 @@
--- 压测活动：1 个争抢活动（库存 10）+ 5 个容量活动（库存 500，供多轮复用）
+-- 压测活动：1 个争抢活动（库存 10）+ 5 个容量活动（库存 500）+ 3 个超额认购活动（10/50/50）
 -- 用法：mysql -h <RDS> -u <user> -p doro_mall < seed-activities.sql
--- 活动 id 固定在 3900000000000000001 ~ 3900000000000000006，重复执行会重置库存和时间窗。
+-- 活动 id 固定在 3900000000000000001 ~ 3900000000000000009，重复执行会重置库存和时间窗。
+-- 每个场景用不同活动 id，避免 Redis 闸门状态与 uk_activity_user 影响下一轮。
 
 SET @spu_id = (SELECT id FROM product_spu WHERE status = 1 AND deleted = 0 ORDER BY id LIMIT 1);
 SET @sku_id = (SELECT id FROM product_sku WHERE spu_id = @spu_id AND status = 1 AND deleted = 0 ORDER BY id LIMIT 1);
@@ -20,6 +21,12 @@ VALUES
     (3900000000000000005, @spu_id, @sku_id, '压测-秒杀容量-500-D', 9.90, 500, 500, 1,
      DATE_SUB(NOW(), INTERVAL 1 MINUTE), DATE_ADD(NOW(), INTERVAL 6 HOUR), 1, NOW(), NOW(), 0),
     (3900000000000000006, @spu_id, @sku_id, '压测-秒杀容量-500-E', 9.90, 500, 500, 1,
+     DATE_SUB(NOW(), INTERVAL 1 MINUTE), DATE_ADD(NOW(), INTERVAL 6 HOUR), 1, NOW(), NOW(), 0),
+    (3900000000000000007, @spu_id, @sku_id, '压测-超额认购-10', 9.90, 10, 10, 1,
+     DATE_SUB(NOW(), INTERVAL 1 MINUTE), DATE_ADD(NOW(), INTERVAL 6 HOUR), 1, NOW(), NOW(), 0),
+    (3900000000000000008, @spu_id, @sku_id, '压测-超额认购-50-A', 9.90, 50, 50, 1,
+     DATE_SUB(NOW(), INTERVAL 1 MINUTE), DATE_ADD(NOW(), INTERVAL 6 HOUR), 1, NOW(), NOW(), 0),
+    (3900000000000000009, @spu_id, @sku_id, '压测-超额认购-50-B', 9.90, 50, 50, 1,
      DATE_SUB(NOW(), INTERVAL 1 MINUTE), DATE_ADD(NOW(), INTERVAL 6 HOUR), 1, NOW(), NOW(), 0)
 ON DUPLICATE KEY UPDATE
     spu_id = VALUES(spu_id),
@@ -33,5 +40,5 @@ ON DUPLICATE KEY UPDATE
 
 SELECT id, name, total_stock, available_stock, start_time, end_time
 FROM seckill_activity
-WHERE id BETWEEN 3900000000000000001 AND 3900000000000000006
+WHERE id BETWEEN 3900000000000000001 AND 3900000000000000009
 ORDER BY id;

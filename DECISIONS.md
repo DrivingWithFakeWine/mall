@@ -180,7 +180,38 @@
 - **S2 秒杀容量**：库存 500，100/300/500 线程；100 线程全成功；300/500 线程分别成功 236/372，出现 64/128 个 HTTP 500，原因是 **Hikari 20 + connectionTimeout 3000ms** 被打满（Tomcat busy 峰值 200、Hikari pending 179、DB 行锁等待 18），无超卖
 - **S3 纯非热点**：100 线程、ramp 10s、180s，列表/详情随机；列表 p99 780ms，详情 p99 1667ms
 - **S4 混合（80/20、90/10）**：400+100 / 450+50 线程，240s / 180s；突发窗口内冷请求 p99 从 0.8s/1.6s 升到 6.36～7.63s / 8.07～8.15s，**劣化 6～10 倍**，超过 50% 触发线；突发结束后回落到 0.45～0.79s / 0.9～1.59s
-- **决策**：优先做 **Redis 预扣 + Lua**（减少热点行锁与事务持连接时间），再做热点隔离/限流保护冷流量；MQ 异步下单放在之后
+- **决策**：优先做 **Redis 预扣 + Lua**（减少热点行锁与事务持连接时间），再做热点隔离/限流保护冷流量；MQ 异步下单放在之后（Redis 已于 2026-11-04 实现，见第 8 节；超额认购复测待做）
 - **监控口径**：JFR 与 GC 文件日志会显著拉低 2C 机器 QPS，已拆到 `docker-compose.profiling.yml`，只用于找热点，不与吞吐基线混跑
 - 线上 RDS 已执行秒杀迁移；压测数据脚本与 JMeter 计划在 `deploy/loadtest/`
 - **压测产物**：本地 `loadtest-reports/2026-11-04_c90322a-dirty/`（`summary.csv` + `results/*.jtl` + `reports/*` HTML + `MANIFEST.md`），压测机 `/opt/loadtest/results|reports/` 保留原始副本；报告目录按 `日期_git版本[-dirty]` 命名
+
+### 2026-11-05 Redis 对照复测 ✅
+
+- **部署**：应用 ECS 新增 `redis:7-alpine`（不持久化、仅容器网络）与 `REDIS_PASSWORD`；prod jar sha256 `ad2696f1…`；本轮预热需约 **18 分钟**（12 分钟只有 274 QPS）
+- **S0**：50 线程 180s，397 QPS、avg 122ms、p99 314ms、0 错误（基线 432 / 112 / 244，QPS -8%）
+- **S1**：500 抢 10，10 单无超卖，p50 6.51s、p99 7.53s（基线 p50 5.2s、max 6.9s），**未改善**
+- **S1b**：500 抢 50，50 单，p50 4.49s、p99 5.45s
+- **S2**：100/300/500 线程，成功 100 / 270 / 402，HTTP 500 分别 0 / 30 / 98，原因仍是 Hikari 20 + 3s 超时（基线成功 100 / 236 / 372）
+- **S3**：100 线程，列表 p99 631ms、详情 p99 1387ms（基线 780 / 1667）
+- **S4a**：80/20、库存 50，burst 冷 p99 列表 1.34s、详情 1.86s（基线同参为库存 500 的全赢场景，不可直接对比；冷 p99 比基线 6.36 / 8.15s 低 4～5 倍）
+- **S4b**：90/10、库存 10，burst 冷 p99 列表 0.66s、详情 1.01s，比 S3 高 5% / -27%，**满足 50% 触发线**
+- **S4c**：80/20、库存 500（与基线同参），burst 冷 p99 列表 5.90s、详情 6.95s，与基线 6.36 / 8.15s **基本持平**
+- **结论 1（超额认购有效）**：请求远大于库存时，闸门把 DB 事务降到库存数量级（S1b 50 次，行锁等待 19，Hikari pending 0），冷请求 p99 从 6～8s 降到 0.66～1.86s
+- **结论 2（全赢无效）**：S2 300/500 与 S4c 每个请求仍要进 DB 事务，Hikari 20 继续打满；Redis 不解决全赢，这是 **MQ 异步下单 / 库存分桶** 的直接依据
+- **结论 3（S1 未达标）**：500ms 超时版本在 500 并发下出现 **418/500 个 503**；调到 2s 后 0 个 503，但请求仍要 4～7s。Redis 服务端只有 10～100µs，瓶颈已从行锁转移到**闸门前的地址/活动两次 DB 查询**与 **2C 机器上 Lettuce 单连接的客户端调度**
+- **功能**：无超卖、无重复用户；Redis 停机下单 503 且 DB 不变（详情 fail-open 200）；恢复后懒初始化成功；同用户 10 并发仅 1 单；取消后 DB 与 Redis 同步 +1 且只能回补一次
+- **产物**：`loadtest-reports/2026-11-05_bae08ff-dirty/`（summary.csv + JTL + HTML + MANIFEST）
+
+## 8. Redis 秒杀预扣 ✅（2026-11-04）
+
+- **定位**：Redis 只做准入闸门，`seckill_activity` 的条件 UPDATE 仍是最终真相，保证不超卖
+- **流程**：事务外校验地址/活动 → Lua 预扣（库存 + 用户占位）→ 预扣成功者进入 DB 事务；事务失败 `INCR` 库存并移除占位，唯一键冲突则归还库存但保留占位
+- **Key**：`doro:seckill:seckill:stock:{activityId}`、`doro:seckill:seckill:users:{activityId}`（前缀 + 固定段，目前重复了一段 `seckill`，后续可统一为 `doro:seckill:stock`）；TTL = 活动结束 + 1 天；前缀可配 `shop.seckill.redis.prefix`
+- **取消/超时**：DB 回补成功后 Redis `INCR`，保留用户占位（取消后不可复购）
+- **初始化**：只补缺失 key（`setIfAbsent`），启动与每 5 分钟对账任务补齐；不一致只告警，不自动覆盖
+- **不持久化**：Redis 重启后从 DB 重新初始化，避免旧快照复活脏库存；占位丢失由 `uk_activity_user` 兜底
+- **故障策略**：Redis 不可用 → 秒杀下单 HTTP 503，不降级 DB；命令超时 **2s**（2026-11-05 由 500ms 上调：2C 机器 500 并发时客户端等待会超过 500ms，旧值导致 503 风暴）
+- **本地/部署**：本地 Docker `redis:7-alpine`（开发 DB0、测试 DB1）；compose 增加 redis 服务、`REDIS_PASSWORD`、健康检查，仅容器内网访问
+- **测试**：`SeckillStockServiceTest` 7 个、`SeckillRedisUnavailableTest` 1 个、`SeckillOrderTest` 增加事务内失败回滚用例；全量 91 个通过
+- **活动详情缓存（2026-11-05）**：Key `doro:seckill:activity:{activityId}`，缓存活动/SPU/SKU 元数据，TTL 30 秒 + 0～10 秒抖动；**库存、phase、serverTime 不缓存**，库存优先读 Redis stock key，缺失回退 DB；不存在活动缓存 `__NULL__` 10 秒；Redis 异常 fail-open 回退 DB（与下单 fail-fast 不同）；管理端上线后需在活动变更时 `evict`
+- **未做**：活动列表缓存、普通商品详情缓存、MQ 异步下单、热点隔离、库存分桶、Redis 集群

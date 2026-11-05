@@ -8,6 +8,10 @@ spring:
       # 并发测试会同时占用多个连接，默认 10 会让线程排队、削弱复现效果
       maximum-pool-size: 32
       minimum-idle: 4
+  data:
+    redis:
+      # 与开发用的 DB 0 隔离
+      database: 1
 
 mybatis-plus:
   configuration:
@@ -19,3 +23,7 @@ shop:
     timeout:
       # 测试中关闭定时扫描，避免后台任务干扰用例；验证逻辑时直接调 OrderService
       enabled: false
+  seckill:
+    redis:
+      # 测试里由用例显式初始化库存，关闭后台预热/对账
+      task-enabled: false

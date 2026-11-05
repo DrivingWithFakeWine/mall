@@ -9,6 +9,15 @@ spring:
     url: ${DB_URL:jdbc:mysql://localhost:3306/doro_mall?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      # 2C 机器高并发突发时，客户端线程调度延迟会超过 500ms；超时过短会把闸门退化成 503 风暴
+      # 仍低于 DB 连接池 3s 超时，保证 Redis 故障时快速失败
+      timeout: 2s
+      connect-timeout: 1s
 
 app:
   jwt:
@@ -23,6 +32,18 @@ shop:
       scan-interval-ms: 60000
       initial-delay-ms: 30000
       batch-size: 100
+  seckill:
+    redis:
+      # Redis 只是秒杀准入闸门，库存最终以 MySQL 为准
+      prefix: doro:seckill
+      task-enabled: true
+      reconcile-interval-ms: 300000
+      reconcile-initial-delay-ms: 30000
+      # 活动详情只缓存元数据，库存/phase/serverTime 实时计算
+      activity-cache-enabled: true
+      activity-cache-ttl-seconds: 30
+      activity-cache-jitter-seconds: 10
+      activity-cache-missing-ttl-seconds: 10
 
 mybatis-plus:
   configuration:

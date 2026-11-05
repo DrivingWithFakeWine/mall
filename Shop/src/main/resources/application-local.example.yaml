@@ -3,3 +3,7 @@ spring:
   datasource:
     username: root
     password: 你的数据库密码
+
+# 本地秒杀依赖 Redis（默认 localhost:6379/0，测试用 DB 1，无需密码）：
+# docker run -d --name doroshop-redis -p 6379:6379 redis:7-alpine \
+#   redis-server --save "" --appendonly no --maxmemory-policy noeviction
