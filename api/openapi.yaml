@@ -992,11 +992,13 @@ paths:
   /seckill/{id}/order:
     post:
       tags: [Seckill]
-      summary: 秒杀下单
+      summary: 秒杀下单（同步或异步）
       description: |
         需登录。数量固定 1，同一用户同一活动只能成功一单（唯一键兜底）。
         条件扣减活动库存 `available_stock >= 1`，与商品库存 product_stock 相互独立；
         支付只累加销量，取消与超时取消归还活动库存。
+        异步开关打开时立即返回 `PENDING` + token，前端轮询 `/seckill/order/result`；
+        关闭时直接返回 `SUCCESS` + orderId（兼容原有同步行为）。
       operationId: submitSeckillOrder
       security: [{ bearerAuth: [] }]
       parameters:
@@ -1014,10 +1016,10 @@ paths:
               remark: 秒杀
       responses:
         '200':
-          description: 下单成功
+          description: 下单受理（PENDING 或 SUCCESS）
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApiOrderSubmit' }
+              schema: { $ref: '#/components/schemas/ApiSeckillOrderSubmit' }
         '400':
           description: 活动未开始/已结束/售罄、商品下架、重复提交或地址不存在
           content:
@@ -1034,7 +1036,35 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
         '503':
-          description: 秒杀服务暂不可用（Redis 闸门故障）
+          description: 秒杀服务暂不可用（Redis 闸门或消息队列故障）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /seckill/order/result:
+    get:
+      tags: [Seckill]
+      summary: 查询秒杀异步下单结果
+      operationId: getSeckillOrderResult
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: PENDING 排队中 / SUCCESS 已建单 / FAILED 失败
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSeckillOrderSubmit' }
+        '401':
+          description: 未登录或 token 无效
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: 结果不存在或已过期
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1402,6 +1432,32 @@ components:
         code: { type: integer, example: 200 }
         message: { type: string, example: success }
         data: { $ref: '#/components/schemas/OrderSubmitVO' }
+
+    SeckillOrderSubmitVO:
+      type: object
+      required: [status]
+      properties:
+        token:
+          type: string
+          description: 异步下单令牌，用于查询结果
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED]
+        orderId: { type: string }
+        orderNo: { type: string }
+        payAmount: { type: number, format: double }
+        expireTime: { type: string, format: date-time }
+        message:
+          type: string
+          description: 失败原因，仅 FAILED 时有值
+
+    ApiSeckillOrderSubmit:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: integer, example: 200 }
+        message: { type: string, example: success }
+        data: { $ref: '#/components/schemas/SeckillOrderSubmitVO' }
 
     CartAddDTO:
       type: object

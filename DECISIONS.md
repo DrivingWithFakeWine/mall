@@ -212,6 +212,19 @@
 - **不持久化**：Redis 重启后从 DB 重新初始化，避免旧快照复活脏库存；占位丢失由 `uk_activity_user` 兜底
 - **故障策略**：Redis 不可用 → 秒杀下单 HTTP 503，不降级 DB；命令超时 **2s**（2026-11-05 由 500ms 上调：2C 机器 500 并发时客户端等待会超过 500ms，旧值导致 503 风暴）
 - **本地/部署**：本地 Docker `redis:7-alpine`（开发 DB0、测试 DB1）；compose 增加 redis 服务、`REDIS_PASSWORD`、健康检查，仅容器内网访问
-- **测试**：`SeckillStockServiceTest` 7 个、`SeckillRedisUnavailableTest` 1 个、`SeckillOrderTest` 增加事务内失败回滚用例；全量 91 个通过
+- **测试**：`SeckillStockServiceTest` 7 个、`SeckillRedisUnavailableTest` 1 个、`SeckillOrderTest` 增加事务内失败回滚与异步消费用例；全量 95 个通过
 - **活动详情缓存（2026-11-05）**：Key `doro:seckill:activity:{activityId}`，缓存活动/SPU/SKU 元数据，TTL 30 秒 + 0～10 秒抖动；**库存、phase、serverTime 不缓存**，库存优先读 Redis stock key，缺失回退 DB；不存在活动缓存 `__NULL__` 10 秒；Redis 异常 fail-open 回退 DB（与下单 fail-fast 不同）；管理端上线后需在活动变更时 `evict`
-- **未做**：活动列表缓存、普通商品详情缓存、MQ 异步下单、热点隔离、库存分桶、Redis 集群
+- **未做**：活动列表缓存、普通商品详情缓存、热点隔离、库存分桶、Redis 集群、发布确认与预扣泄漏对账
+
+## 9. 秒杀异步下单（2026-11-06，代码完成，待联调）⏳
+
+- **目标**：把"500 个事务瞬间压进 Hikari"从用户请求路径里拿掉；请求只做闸门 + 入队
+- **开关**：`shop.seckill.async.enabled`（env `SHOP_SECKILL_ASYNC_ENABLED`），默认 false；关闭时完全走原同步事务，便于 A/B 压测
+- **链路**：`submitOrder` → 活动校验 + Redis 预扣 → 发 RabbitMQ → Redis 写 PENDING → 返回 token；消费者校验地址/活动/SKU 后在同一事务里扣库存并建单
+- **队列**：exchange `doroshop.seckill`、queue `doroshop.seckill.order`、routing `order`；死信 `doroshop.seckill.dlx` → `doroshop.seckill.order.dlq`；消费者并发 8、prefetch 8、重试 3 次后进 DLQ
+- **幂等**：`orders.order_token` 唯一键；同一 token 重投直接返回成功（不会把 SUCCESS 覆盖成 FAILED）；`uk_activity_user` 仍是最终防线
+- **失败处理**：入队失败 → 回滚预扣并返回 503；消费者遇到地址/活动/商品等永久性失败 → 回滚预扣 + 结果 FAILED；DB 暂时性异常 → 抛出交给 MQ 重试，预扣保留避免二次扣减
+- **结果查询**：Redis `doro:seckill:result:{token}`（TTL 30 分钟），过期后回落到 `orders.order_token`；接口 `GET /api/seckill/order/result`
+- **前端**：下单后 400ms 轮询、最多 8 秒；超时提示"已进入排队，稍后在订单页查看"
+- **待办**：publisher confirm、DLQ 消息的预扣泄漏对账、异步模式下的 S2/S4c 压测对比；库存分桶仍后置
+

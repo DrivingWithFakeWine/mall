@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dking.shop.dto.SeckillOrderDTO;
+import com.dking.shop.dto.SeckillOrderMessage;
 import com.dking.shop.entity.Order;
 import com.dking.shop.entity.OrderAddress;
 import com.dking.shop.entity.OrderItem;
@@ -15,6 +16,7 @@ import com.dking.shop.entity.UserAddress;
 import com.dking.shop.exception.BusinessException;
 import com.dking.shop.exception.NotFoundException;
 import com.dking.shop.exception.SeckillSoldOutException;
+import com.dking.shop.exception.ServiceUnavailableException;
 import com.dking.shop.mapper.OrderAddressMapper;
 import com.dking.shop.mapper.OrderItemMapper;
 import com.dking.shop.mapper.OrderMapper;
@@ -22,18 +24,23 @@ import com.dking.shop.mapper.ProductSkuMapper;
 import com.dking.shop.mapper.ProductSpuMapper;
 import com.dking.shop.mapper.SeckillActivityMapper;
 import com.dking.shop.mapper.UserAddressMapper;
+import com.dking.shop.service.SeckillOrderPublisher;
 import com.dking.shop.service.SeckillService;
 import com.dking.shop.service.SeckillStockService;
 import com.dking.shop.service.support.ProductSearchSupport;
 import com.dking.shop.service.support.SeckillActivityCache;
 import com.dking.shop.service.support.SeckillActivitySnapshot;
+import com.dking.shop.service.support.SeckillOrderResultStore;
 import com.dking.shop.util.LikeUtils;
 import com.dking.shop.vo.OrderSubmitVO;
 import com.dking.shop.vo.PageVO;
 import com.dking.shop.vo.SeckillActivityDetailVO;
 import com.dking.shop.vo.SeckillActivityListItemVO;
+import com.dking.shop.vo.SeckillOrderSubmitVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -93,6 +100,15 @@ public class SeckillServiceImpl implements SeckillService {
 
     @Resource
     private ProductSearchSupport productSearchSupport;
+
+    @Resource
+    private SeckillOrderResultStore orderResultStore;
+
+    @Resource
+    private ObjectProvider<SeckillOrderPublisher> orderPublisherProvider;
+
+    @Value("${shop.seckill.async.enabled:false}")
+    private boolean asyncOrderEnabled;
 
     @Override
     public PageVO<SeckillActivityListItemVO> list(int page, int size, String keyword) {
@@ -241,25 +257,17 @@ public class SeckillServiceImpl implements SeckillService {
                 sku != null ? sku.getPrice() : null);
     }
 
+    // 同步路径
     @Override
     public OrderSubmitVO submit(Long userId, Long activityId, SeckillOrderDTO dto) {
-        // 事务外完成参数校验与 Redis 预扣：输家不占用 DB 连接
+        // 同步路径：事务外完成参数校验与 Redis 预扣，输家不占用 DB 连接
         UserAddress address = loadAddress(userId, dto.getAddressId());
         SeckillActivity activity = loadOnlineActivity(activityId);
-
-        SeckillStockService.ReserveResult result = seckillStockService.reserve(activity, userId);
-        switch (result) {
-            case DUPLICATE -> throw new BusinessException("您已参与过该活动，请勿重复提交");
-            case SOLD_OUT -> throw new SeckillSoldOutException();
-            case NOT_STARTED -> throw new BusinessException("活动尚未开始");
-            case ENDED -> throw new BusinessException("活动已结束");
-            case RESERVED -> {
-                // 继续进入 DB 事务
-            }
-        }
+        reserveOrThrow(activity, userId);
+        String token = IdWorker.getIdStr();
 
         try {
-            return transactionTemplate.execute(status -> doSubmit(userId, activity, address, dto));
+            return transactionTemplate.execute(status -> doSubmit(userId, activity, address, dto, token));
         } catch (SeckillSoldOutException e) {
             // DB 库存已为 0，Redis 预扣结果与 DB 一致，不能再归还
             throw e;
@@ -271,6 +279,121 @@ public class SeckillServiceImpl implements SeckillService {
             // 地址/商品/DB 任一步失败：归还预扣并允许重试
             releaseQuietly(activityId, userId, false);
             throw e;
+        }
+    }
+
+    @Override
+    public SeckillOrderSubmitVO submitOrder(Long userId, Long activityId, SeckillOrderDTO dto) {
+        if (!asyncOrderEnabled) {
+            return SeckillOrderSubmitVO.success(null, submit(userId, activityId, dto));
+        }
+        // 异步路径：热路径只做活动校验 + Redis 预扣 + 入队，地址与商品交给消费者
+        SeckillActivity activity = loadOnlineActivity(activityId);
+        reserveOrThrow(activity, userId);
+
+        String token = IdWorker.getIdStr();
+        SeckillOrderMessage message = new SeckillOrderMessage(token, userId, activityId,
+                dto.getAddressId(), dto.getRemark(), System.currentTimeMillis());
+        SeckillOrderPublisher publisher = orderPublisherProvider.getIfAvailable();
+        if (publisher == null) {
+            releaseQuietly(activityId, userId, false);
+            throw new ServiceUnavailableException("秒杀队列未启用，请稍后重试");
+        }
+        try {
+            publisher.publish(message);
+        } catch (RuntimeException e) {
+            // 入队失败必须回滚预扣，否则库存与用户占位泄漏
+            releaseQuietly(activityId, userId, false);
+            log.error("秒杀消息入队失败, activityId={}, userId={}", activityId, userId, e);
+            throw new ServiceUnavailableException("秒杀服务暂不可用，请稍后重试");
+        }
+        orderResultStore.markPending(token, userId);
+        return SeckillOrderSubmitVO.pending(token);
+    }
+
+    @Override
+    public SeckillOrderSubmitVO orderResult(Long userId, String token) {
+        SeckillOrderResultStore.StoredResult stored = orderResultStore.get(token);
+        if (stored != null) {
+            if (!String.valueOf(userId).equals(stored.userId())) {
+                throw new NotFoundException("订单不存在");
+            }
+            SeckillOrderSubmitVO vo = new SeckillOrderSubmitVO();
+            vo.setToken(token);
+            vo.setStatus(stored.status());
+            vo.setOrderId(stored.orderId());
+            vo.setOrderNo(stored.orderNo());
+            vo.setPayAmount(stored.payAmount());
+            vo.setExpireTime(stored.expireTime());
+            vo.setMessage(stored.message());
+            return vo;
+        }
+
+        // 结果缓存过期或 Redis 故障：回落到订单表
+        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
+                .eq(Order::getOrderToken, token));
+        if (order == null || !userId.equals(order.getUserId())) {
+            throw new NotFoundException("订单不存在或结果已过期");
+        }
+        return SeckillOrderSubmitVO.success(token, toOrderSubmitVO(order));
+    }
+
+    private OrderSubmitVO toOrderSubmitVO(Order order) {
+        OrderSubmitVO vo = new OrderSubmitVO();
+        vo.setOrderId(order.getId());
+        vo.setOrderNo(order.getOrderNo());
+        vo.setPayAmount(order.getPayAmount());
+        vo.setStatus(order.getStatus());
+        vo.setExpireTime(order.getExpireTime());
+        return vo;
+    }
+
+    @Override
+    public void processQueuedOrder(SeckillOrderMessage message) {
+        Long activityId = message.activityId();
+        Long userId = message.userId();
+        SeckillOrderDTO dto = new SeckillOrderDTO();
+        dto.setAddressId(message.addressId());
+        dto.setRemark(message.remark());
+
+        // 消息重投：同一 token 已建单则直接返回成功，避免把成功覆盖成失败
+        Order existing = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
+                .eq(Order::getOrderToken, message.token()));
+        if (existing != null) {
+            orderResultStore.markSuccess(message.token(), userId, toOrderSubmitVO(existing));
+            return;
+        }
+
+        try {
+            UserAddress address = loadAddress(userId, message.addressId());
+            SeckillActivity activity = loadOnlineActivity(activityId);
+            OrderSubmitVO order = transactionTemplate.execute(status ->
+                    doSubmit(userId, activity, address, dto, message.token()));
+            orderResultStore.markSuccess(message.token(), userId, order);
+            log.info("秒杀异步下单成功, token={}, orderId={}", message.token(), order.getOrderId());
+        } catch (DuplicateKeyException e) {
+            // 唯一键兜底：归还库存但保留占位，避免同一用户反复撞库
+            releaseQuietly(activityId, userId, true);
+            orderResultStore.markFailed(message.token(), userId, "您已参与过该活动，请勿重复提交");
+        } catch (BusinessException | NotFoundException e) {
+            // 地址/活动/商品等永久性失败：回滚预扣，允许用户重试
+            releaseQuietly(activityId, userId, false);
+            orderResultStore.markFailed(message.token(), userId, e.getMessage());
+        }
+        // 其余运行时异常（如 DB 暂时不可用）直接抛出，交给 MQ 重试；预扣保留避免重复扣减
+    }
+
+    // redis闸门,redis预扣
+    private void reserveOrThrow(SeckillActivity activity, Long userId) {
+        SeckillStockService.ReserveResult result = seckillStockService.reserve(activity, userId);
+        switch (result) {
+            case DUPLICATE -> throw new BusinessException("您已参与过该活动，请勿重复提交");
+            case SOLD_OUT -> throw new SeckillSoldOutException();
+            case NOT_STARTED -> throw new BusinessException("活动尚未开始");
+            case ENDED -> throw new BusinessException("活动已结束");
+            case RESERVED -> {
+                // 继续
+            }
         }
     }
 
@@ -301,7 +424,7 @@ public class SeckillServiceImpl implements SeckillService {
     }
 
     private OrderSubmitVO doSubmit(Long userId, SeckillActivity activity,
-                                   UserAddress address, SeckillOrderDTO dto) {
+                                   UserAddress address, SeckillOrderDTO dto, String orderToken) {
         Long activityId = activity.getId();
         ProductSku sku = productSkuMapper.selectById(activity.getSkuId());
         ProductSpu spu = sku == null ? null : productSpuMapper.selectById(sku.getSpuId());
@@ -347,6 +470,7 @@ public class SeckillServiceImpl implements SeckillService {
         order.setUserId(userId);
         order.setMerchantId(SINGLE_MERCHANT_ID);
         order.setActivityId(activityId);
+        order.setOrderToken(orderToken);
         order.setTotalAmount(amount);
         order.setPayAmount(amount);
         order.setStatus(ORDER_STATUS_WAIT_PAY);

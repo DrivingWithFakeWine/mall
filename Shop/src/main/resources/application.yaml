@@ -18,6 +18,22 @@ spring:
       # 仍低于 DB 连接池 3s 超时，保证 Redis 故障时快速失败
       timeout: 2s
       connect-timeout: 1s
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # 消费者并发钉死，避免把突发直接压给 Hikari
+        concurrency: ${SHOP_SECKILL_ASYNC_CONCURRENCY:8}
+        max-concurrency: ${SHOP_SECKILL_ASYNC_CONCURRENCY:8}
+        prefetch: 8
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 500ms
 
 app:
   jwt:
@@ -44,6 +60,15 @@ shop:
       activity-cache-ttl-seconds: 30
       activity-cache-jitter-seconds: 10
       activity-cache-missing-ttl-seconds: 10
+    async:
+      # 打开后下单只入队并返回 PENDING；关闭时走原有同步事务
+      enabled: ${SHOP_SECKILL_ASYNC_ENABLED:false}
+      exchange: doroshop.seckill
+      queue: doroshop.seckill.order
+      routing-key: order
+      dead-letter-exchange: doroshop.seckill.dlx
+      dead-letter-queue: doroshop.seckill.order.dlq
+      result-ttl-seconds: 1800
 
 mybatis-plus:
   configuration:

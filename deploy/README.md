@@ -10,12 +10,14 @@ Nginx 容器 ──静态文件──► 前端 dist（React 构建产物）
   │ /api/* 反代（去掉 /api 前缀）
   ▼
 Backend 容器 :8080（Spring Boot，prod profile）
-  │ 内网 3306            │ 容器网络 6379
-  ▼                      ▼
-RDS MySQL（doro_mall）   Redis 容器（秒杀闸门，不持久化）
+  │ 内网 3306            │ 容器网络 6379          │ 容器网络 5672
+  ▼                      ▼                        ▼
+RDS MySQL（doro_mall）   Redis 容器（秒杀闸门）   RabbitMQ 容器（秒杀下单队列）
 ```
 
-> `.env` 需要新增 `REDIS_PASSWORD`；Redis 不发布端口，仅 backend 通过容器网络访问。
+> `.env` 需要新增 `REDIS_PASSWORD`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`；
+> Redis / RabbitMQ 都不发布端口，仅 backend 通过容器网络访问。
+> 秒杀异步下单由 `SHOP_SECKILL_ASYNC_ENABLED=true` 打开（默认 false，走同步事务）。
 
 ## 服务器目录
 

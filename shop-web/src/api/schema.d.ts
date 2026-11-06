@@ -513,12 +513,31 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 秒杀下单
+         * 秒杀下单（同步或异步）
          * @description 需登录。数量固定 1，同一用户同一活动只能成功一单（唯一键兜底）。
          *     条件扣减活动库存 `available_stock >= 1`，与商品库存 product_stock 相互独立；
          *     支付只累加销量，取消与超时取消归还活动库存。
+         *     异步开关打开时立即返回 `PENDING` + token，前端轮询 `/seckill/order/result`；
+         *     关闭时直接返回 `SUCCESS` + orderId（兼容原有同步行为）。
          */
         post: operations["submitSeckillOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/seckill/order/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询秒杀异步下单结果 */
+        get: operations["getSeckillOrderResult"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -802,6 +821,27 @@ export interface components {
             /** @example success */
             message: string;
             data?: components["schemas"]["OrderSubmitVO"];
+        };
+        SeckillOrderSubmitVO: {
+            /** @description 异步下单令牌，用于查询结果 */
+            token?: string;
+            /** @enum {string} */
+            status: "PENDING" | "SUCCESS" | "FAILED";
+            orderId?: string;
+            orderNo?: string;
+            /** Format: double */
+            payAmount?: number;
+            /** Format: date-time */
+            expireTime?: string;
+            /** @description 失败原因，仅 FAILED 时有值 */
+            message?: string;
+        };
+        ApiSeckillOrderSubmit: {
+            /** @example 200 */
+            code: number;
+            /** @example success */
+            message: string;
+            data?: components["schemas"]["SeckillOrderSubmitVO"];
         };
         CartAddDTO: {
             /**
@@ -2435,13 +2475,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 下单成功 */
+            /** @description 下单受理（PENDING 或 SUCCESS） */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiOrderSubmit"];
+                    "application/json": components["schemas"]["ApiSeckillOrderSubmit"];
                 };
             };
             /** @description 活动未开始/已结束/售罄、商品下架、重复提交或地址不存在 */
@@ -2471,8 +2511,48 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 秒杀服务暂不可用（Redis 闸门故障） */
+            /** @description 秒杀服务暂不可用（Redis 闸门或消息队列故障） */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getSeckillOrderResult: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description PENDING 排队中 / SUCCESS 已建单 / FAILED 失败 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSeckillOrderSubmit"];
+                };
+            };
+            /** @description 未登录或 token 无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 结果不存在或已过期 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

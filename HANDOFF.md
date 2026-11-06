@@ -1,7 +1,7 @@
 # 交接文档（HANDOFF）
 
 > 新会话开始时依次读：`MEMORY.md` 索引 → `BLUEPRINT.md` 概要 → `DECISIONS.md` → 本文件。
-> 最后更新：2026-11-05
+> 最后更新：2026-11-06
 
 ## 一、当前阶段
 
@@ -22,7 +22,7 @@
 - Redis 秒杀预扣（2026-11-04）：Lua 闸门（库存+用户占位）在 DB 事务之前，DB 条件更新仍为最终真相；Redis 不可用返回 503；本地 Docker Redis，测试 91 个全绿；
 - 秒杀活动详情缓存（2026-11-05）：只缓存活动/SPU/SKU 元数据，库存/phase/serverTime 实时计算；Redis 故障时 fail-open 回退 DB；
 - Docker Compose + Nginx + RDS 部署已上线；
-- 测试 91 个：并发、服务层、Controller 集成，`mvn test` 全绿；
+- 测试 95 个：并发、服务层、Controller 集成，`mvn test` 全绿（含 MQ 消费者建单/失败回滚/重投幂等 4 个用例）；
 - 商品列表压测：50 线程从 **75.8 QPS 优化到 395～415 QPS**，平均延迟 641ms → 117～123ms。
 
 ### 性能优化链
@@ -185,6 +185,7 @@ a1a96b1 perf(nginx): 启用 upstream keepalive 复用后端连接
 - 本轮压测预热至少 10～12 分钟（约 6 轮 × 120s），否则 50 线程 QPS 只有 130～250；JFR/GC 日志不计入吞吐基线。
 - 压测暴露：Hikari 20 + connectionTimeout 3000ms 在秒杀热点下会触发连接池超时（HTTP 500），是当前真实瓶颈之一。
 - 压测期后端开启 JFR（约 1~2% 开销）与 Actuator metrics；结束后可从 compose 移除 JFR 参数。Nginx 新增耗时日志与 8081 stub_status（仅本机/容器网段可访问）。
+- 秒杀异步下单（2026-11-06 代码完成）：`SHOP_SECKILL_ASYNC_ENABLED` 打开后下单只入队并返回 PENDING，前端轮询 `/api/seckill/order/result`；上线前需在 RDS 执行 `Shop/sql/migration_2026-11-06_seckill_async.sql`（`orders.order_token`），并在 `.env` 增加 `RABBITMQ_USERNAME/RABBITMQ_PASSWORD`。
 - Redis 只做秒杀闸门且**不持久化**：重启后从 MySQL 库存重新初始化；用户占位丢失由 `uk_activity_user` 兜底；Redis 不可用时秒杀接口返回 503，不降级 DB。
 - 秒杀闸门的 Redis 超时已从 500ms 调到 2s：2C 机器上 500 并发时客户端等待会超过 500ms，旧值导致 418/500 个 503（2026-11-05 实测）；调到 2s 后不再误判，但 S1 单请求仍要 4～7s，瓶颈在闸门前的地址/活动 DB 查询与 Lettuce 单连接调度，下一步考虑连接池或把读取移到闸门之后。
 - 本地跑测试前需要 Redis：`docker start doroshop-redis`（首次按 `application-local.example.yaml` 注释创建容器），测试使用 Redis DB 1。
@@ -222,7 +223,7 @@ cd /opt/loadtest && /opt/apache-jmeter-5.6.3/bin/jmeter -n -t plans/doroshop.jmx
 - 秒杀迁移脚本：线上 RDS 已执行（2026-11-04）；
 - Redis 预扣后的超额认购复测：已完成（2026-11-05），结果见第 4.5 节；
 - 秒杀闸门性能：S1 仍未达 p99 <1s，需要降低闸门前读取开销或解决 Lettuce 单连接在高并发下的客户端延迟；
-- 热点隔离、MQ 异步下单：未做；
+- 热点隔离、MQ 异步下单：MQ 异步下单代码已完成（2026-11-06，RabbitMQ + 结果轮询），**本地联调与压测未做**，异步开关默认关闭；热点隔离未做；
 - 订单履约（发货/确认收货）：随管理端一起做；
 - Micrometer 指标实验：未做；
 - 本地 9 个提交：未推送；

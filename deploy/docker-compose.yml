@@ -28,6 +28,12 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # true：秒杀下单入队并返回 PENDING；false：保持同步事务
+      SHOP_SECKILL_ASYNC_ENABLED: ${SHOP_SECKILL_ASYNC_ENABLED:-false}
     mem_limit: 1600m
     restart: unless-stopped
     depends_on:
@@ -37,6 +43,27 @@ services:
       driver: json-file
       options:
         max-size: "20m"
+        max-file: "3"
+    networks:
+      - doroshop
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: doroshop-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    mem_limit: 320m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
         max-file: "3"
     networks:
       - doroshop

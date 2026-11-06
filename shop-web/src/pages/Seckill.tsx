@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Empty, Pagination, Progress, Spin, Tag, message } from 'antd'
-import { getSeckillList, submitSeckillOrder, type SeckillActivity } from '../api/seckill'
+import { getSeckillList, getSeckillOrderResult, submitSeckillOrder, type SeckillActivity, type SeckillOrderSubmitVO } from '../api/seckill'
 import AddressSelectModal from '../components/AddressSelectModal'
 import ImageBox from '../components/ImageBox'
 import SearchBar from '../components/SearchBar'
@@ -28,6 +28,21 @@ function countdownText(activity: SeckillActivity, now: number): string {
     }
     const ms = new Date(activity.endTime).getTime() - now
     return ms > 0 ? `距结束 ${formatCountdown(ms)}` : '即将结束'
+}
+
+const RESULT_POLL_INTERVAL_MS = 400
+const RESULT_POLL_TIMEOUT_MS = 8000
+
+async function pollSeckillResult(token: string): Promise<SeckillOrderSubmitVO | null> {
+    const deadline = Date.now() + RESULT_POLL_TIMEOUT_MS
+    while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, RESULT_POLL_INTERVAL_MS))
+        const result = await getSeckillOrderResult(token)
+        if (result.status !== 'PENDING') {
+            return result
+        }
+    }
+    return null
 }
 
 export default function SeckillPage() {
@@ -86,10 +101,24 @@ export default function SeckillPage() {
         }
         setSubmitting(true)
         try {
-            const order = await submitSeckillOrder(buyTarget.id, { addressId })
-            message.success('抢购成功，请尽快支付')
-            setModalOpen(false)
-            navigate(`/order/${order.orderId}`)
+            const accepted = await submitSeckillOrder(buyTarget.id, { addressId })
+            const result = accepted.status === 'PENDING' && accepted.token
+                ? await pollSeckillResult(accepted.token)
+                : accepted
+            if (!result) {
+                setModalOpen(false)
+                message.info('已进入排队，请稍后在「我的订单」查看结果')
+                loadList().catch(() => undefined)
+                return
+            }
+            if (result.status === 'SUCCESS' && result.orderId) {
+                message.success('抢购成功，请尽快支付')
+                setModalOpen(false)
+                navigate(`/order/${result.orderId}`)
+                return
+            }
+            message.error(result.message || '秒杀失败')
+            loadList().catch(() => undefined)
         } catch (e) {
             message.error((e as Error).message || '秒杀失败')
             loadList().catch(() => undefined)

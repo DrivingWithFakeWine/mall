@@ -27,6 +27,9 @@ public class Order {
     /** 秒杀活动 id；普通订单为 null */
     private Long activityId;
 
+    /** 秒杀异步下单令牌，用于结果查询与消息重投幂等 */
+    private String orderToken;
+
     private BigDecimal totalAmount;
     private BigDecimal payAmount;
 

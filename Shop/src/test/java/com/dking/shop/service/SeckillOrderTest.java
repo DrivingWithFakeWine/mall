@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.dking.shop.dto.SeckillOrderDTO;
+import com.dking.shop.dto.SeckillOrderMessage;
 import com.dking.shop.entity.Category;
 import com.dking.shop.entity.Order;
 import com.dking.shop.entity.OrderItem;
@@ -26,6 +27,7 @@ import com.dking.shop.vo.OrderSubmitVO;
 import com.dking.shop.vo.PageVO;
 import com.dking.shop.vo.SeckillActivityDetailVO;
 import com.dking.shop.vo.SeckillActivityListItemVO;
+import com.dking.shop.vo.SeckillOrderSubmitVO;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -497,6 +500,87 @@ class SeckillOrderTest {
 
     private List<Long> idsOf(PageVO<SeckillActivityListItemVO> page) {
         return page.getRecords().stream().map(SeckillActivityListItemVO::getId).toList();
+    }
+
+    @Test
+    void asyncConsumer_shouldCreateOrderAndStoreResult() {
+        long userId = IdWorker.getId();
+        Long activityId = createActivity(5, 1,
+                LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusHours(1));
+        Long addressId = createAddress(userId);
+        SeckillActivity activity = seckillActivityMapper.selectById(activityId);
+        assertEquals(SeckillStockService.ReserveResult.RESERVED,
+                seckillStockService.reserve(activity, userId));
+
+        String token = IdWorker.getIdStr();
+        seckillService.processQueuedOrder(new SeckillOrderMessage(token, userId, activityId,
+                addressId, "秒杀测试", System.currentTimeMillis()));
+
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderToken, token));
+        assertNotNull(order, "消费者应建单并写入 order_token");
+        assertEquals(4, seckillActivityMapper.selectById(activityId).getAvailableStock());
+        assertEquals(4, seckillStockService.currentStock(activityId));
+
+        SeckillOrderSubmitVO result = seckillService.orderResult(userId, token);
+        assertEquals(SeckillOrderSubmitVO.SUCCESS, result.getStatus());
+        assertEquals(order.getId(), result.getOrderId());
+    }
+
+    @Test
+    void asyncConsumer_addressMissing_shouldReleaseReservation() {
+        long userId = IdWorker.getId();
+        Long activityId = createActivity(5, 1,
+                LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusHours(1));
+        SeckillActivity activity = seckillActivityMapper.selectById(activityId);
+        assertEquals(SeckillStockService.ReserveResult.RESERVED,
+                seckillStockService.reserve(activity, userId));
+
+        String token = IdWorker.getIdStr();
+        seckillService.processQueuedOrder(new SeckillOrderMessage(token, userId, activityId,
+                IdWorker.getId(), null, System.currentTimeMillis()));
+
+        assertNull(orderMapper.selectOne(
+                        new LambdaQueryWrapper<Order>().eq(Order::getOrderToken, token)),
+                "地址不存在时不应建单");
+        assertEquals(5, seckillStockService.currentStock(activityId), "失败应归还 Redis 预扣");
+        assertEquals(SeckillOrderSubmitVO.FAILED, seckillService.orderResult(userId, token).getStatus());
+    }
+
+    @Test
+    void asyncConsumer_redelivery_shouldKeepSuccessAndNotDeductTwice() {
+        long userId = IdWorker.getId();
+        Long activityId = createActivity(5, 1,
+                LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusHours(1));
+        Long addressId = createAddress(userId);
+        SeckillActivity activity = seckillActivityMapper.selectById(activityId);
+        seckillStockService.reserve(activity, userId);
+
+        String token = IdWorker.getIdStr();
+        SeckillOrderMessage message = new SeckillOrderMessage(token, userId, activityId,
+                addressId, null, System.currentTimeMillis());
+        seckillService.processQueuedOrder(message);
+        seckillService.processQueuedOrder(message);
+
+        assertEquals(1, orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>().eq(Order::getActivityId, activityId)).intValue(),
+                "重投不应重复建单");
+        assertEquals(4, seckillStockService.currentStock(activityId), "重投不应二次扣减");
+        assertEquals(SeckillOrderSubmitVO.SUCCESS, seckillService.orderResult(userId, token).getStatus(),
+                "重投不应把成功覆盖成失败");
+    }
+
+    @Test
+    void submitOrder_syncMode_shouldReturnSuccess() {
+        long userId = IdWorker.getId();
+        Long activityId = createActivity(5, 1,
+                LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusHours(1));
+
+        SeckillOrderSubmitVO result = seckillService.submitOrder(userId, activityId,
+                dtoOf(createAddress(userId)));
+
+        assertEquals(SeckillOrderSubmitVO.SUCCESS, result.getStatus());
+        assertNotNull(result.getOrderId());
     }
 
     private Long createActivity(int stock, int status, LocalDateTime start, LocalDateTime end) {

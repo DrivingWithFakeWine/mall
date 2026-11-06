@@ -156,6 +156,7 @@ CREATE TABLE `orders` (
   `user_id`       BIGINT        NOT NULL COMMENT '下单用户id',
   `merchant_id`   BIGINT        NOT NULL DEFAULT 0 COMMENT '商家id（单商家阶段固定0，多商家时用于拆单）',
   `activity_id`   BIGINT        DEFAULT NULL COMMENT '秒杀活动id（普通订单为 NULL）',
+  `order_token`   VARCHAR(32)   DEFAULT NULL COMMENT '秒杀异步下单令牌（结果查询/消息幂等）',
   `total_amount`  DECIMAL(10,2) NOT NULL COMMENT '订单总额（快照）',
   `pay_amount`    DECIMAL(10,2) NOT NULL COMMENT '应付金额',
   `status`        TINYINT       NOT NULL DEFAULT 0 COMMENT '0待支付 1已支付 2已发货 3已完成 4已取消',
@@ -169,6 +170,7 @@ CREATE TABLE `orders` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_no` (`order_no`),
   UNIQUE KEY `uk_activity_user` (`activity_id`, `user_id`),
+  UNIQUE KEY `uk_order_token` (`order_token`),
   KEY `idx_user_status` (`user_id`, `status`),
   KEY `idx_status_expire` (`status`, `expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单主表';
