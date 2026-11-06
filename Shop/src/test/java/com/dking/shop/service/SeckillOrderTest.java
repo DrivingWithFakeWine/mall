@@ -74,6 +74,9 @@ class SeckillOrderTest {
     private SeckillStockService seckillStockService;
 
     @Resource
+    private SeckillBucketStockService bucketStockService;
+
+    @Resource
     private StringRedisTemplate redis;
 
     @Value("${shop.seckill.redis.prefix:doro:seckill}")
@@ -209,7 +212,7 @@ class SeckillOrderTest {
         assertEquals(activityStock, success.get(), "成功下单数必须等于活动库存");
 
         SeckillActivity activity = seckillActivityMapper.selectById(activityId);
-        assertEquals(0, activity.getAvailableStock(), "活动库存应扣到 0");
+        assertEquals(0, dbStock(activityId), "活动库存应扣到 0");
         assertEquals(0, seckillStockService.currentStock(activityId), "Redis 库存应扣到 0");
 
         Long orderCount = orderMapper.selectCount(
@@ -274,7 +277,7 @@ class SeckillOrderTest {
         assertTrue(failures.stream().allMatch(m -> m != null && m.contains("请勿重复提交")),
                 () -> "失败原因应为重复提交: " + failures);
 
-        assertEquals(4, seckillActivityMapper.selectById(activityId).getAvailableStock(),
+        assertEquals(4, dbStock(activityId),
                 "活动库存只能扣 1");
         assertEquals(4, seckillStockService.currentStock(activityId), "Redis 库存只能扣 1");
         Long orderCount = orderMapper.selectCount(
@@ -292,26 +295,26 @@ class SeckillOrderTest {
         BusinessException e1 = assertThrows(BusinessException.class,
                 () -> seckillService.submit(userId, notStarted, dto));
         assertTrue(e1.getMessage().contains("尚未开始"));
-        assertEquals(5, seckillActivityMapper.selectById(notStarted).getAvailableStock());
+        assertEquals(5, dbStock(notStarted));
 
         Long ended = createActivity(5, 1,
                 LocalDateTime.now().minusHours(1), LocalDateTime.now().minusMinutes(1));
         BusinessException e2 = assertThrows(BusinessException.class,
                 () -> seckillService.submit(userId, ended, dto));
         assertTrue(e2.getMessage().contains("已结束"));
-        assertEquals(5, seckillActivityMapper.selectById(ended).getAvailableStock());
+        assertEquals(5, dbStock(ended));
 
         Long offline = createActivity(5, 0,
                 LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusHours(1));
         assertThrows(NotFoundException.class, () -> seckillService.submit(userId, offline, dto));
-        assertEquals(5, seckillActivityMapper.selectById(offline).getAvailableStock());
+        assertEquals(5, dbStock(offline));
 
         Long soldOut = createActivity(0, 1,
                 LocalDateTime.now().minusMinutes(1), LocalDateTime.now().plusHours(1));
         BusinessException e3 = assertThrows(BusinessException.class,
                 () -> seckillService.submit(userId, soldOut, dto));
         assertTrue(e3.getMessage().contains("售罄"));
-        assertEquals(0, seckillActivityMapper.selectById(soldOut).getAvailableStock());
+        assertEquals(0, dbStock(soldOut));
     }
 
     @Test
@@ -329,7 +332,7 @@ class SeckillOrderTest {
                     () -> seckillService.submit(userId, activityId, dtoOf(createAddress(userId))));
             assertEquals(5, seckillStockService.currentStock(activityId),
                     "事务内失败应归还 Redis 预扣");
-            assertEquals(5, seckillActivityMapper.selectById(activityId).getAvailableStock());
+            assertEquals(5, dbStock(activityId));
         } finally {
             ProductSku onShelf = new ProductSku();
             onShelf.setId(skuId);
@@ -355,7 +358,7 @@ class SeckillOrderTest {
 
         int salesAfter = productSkuMapper.selectById(skuId).getSales();
         assertEquals(salesBefore == null ? 1 : salesBefore + 1, salesAfter, "支付应累加销量");
-        assertEquals(4, seckillActivityMapper.selectById(activityId).getAvailableStock(),
+        assertEquals(4, dbStock(activityId),
                 "支付不影响活动库存");
         assertEquals(4, seckillStockService.currentStock(activityId), "支付不影响 Redis 库存");
     }
@@ -375,7 +378,7 @@ class SeckillOrderTest {
         assertFalse(orderService.cancelExpiredOrder(vo.getOrderId()), "重复执行应跳过");
 
         assertEquals(4, orderMapper.selectById(vo.getOrderId()).getStatus());
-        assertEquals(5, seckillActivityMapper.selectById(activityId).getAvailableStock(),
+        assertEquals(5, dbStock(activityId),
                 "活动库存应归还且只归还一次");
         assertEquals(5, seckillStockService.currentStock(activityId), "Redis 库存应归还且只归还一次");
         ProductStock stock = productStockMapper.selectById(stockId);
@@ -393,7 +396,7 @@ class SeckillOrderTest {
         orderService.cancel(userId, vo.getOrderId());
 
         assertEquals(4, orderMapper.selectById(vo.getOrderId()).getStatus());
-        assertEquals(5, seckillActivityMapper.selectById(activityId).getAvailableStock());
+        assertEquals(5, dbStock(activityId));
         assertEquals(5, seckillStockService.currentStock(activityId), "Redis 库存应归还");
         ProductStock stock = productStockMapper.selectById(stockId);
         assertEquals(PRODUCT_STOCK, stock.getAvailableStock());
@@ -519,7 +522,7 @@ class SeckillOrderTest {
         Order order = orderMapper.selectOne(
                 new LambdaQueryWrapper<Order>().eq(Order::getOrderToken, token));
         assertNotNull(order, "消费者应建单并写入 order_token");
-        assertEquals(4, seckillActivityMapper.selectById(activityId).getAvailableStock());
+        assertEquals(4, dbStock(activityId));
         assertEquals(4, seckillStockService.currentStock(activityId));
 
         SeckillOrderSubmitVO result = seckillService.orderResult(userId, token);
@@ -581,6 +584,10 @@ class SeckillOrderTest {
 
         assertEquals(SeckillOrderSubmitVO.SUCCESS, result.getStatus());
         assertNotNull(result.getOrderId());
+    }
+
+    private int dbStock(Long activityId) {
+        return bucketStockService.totalAvailable(activityId);
     }
 
     private Long createActivity(int stock, int status, LocalDateTime start, LocalDateTime end) {

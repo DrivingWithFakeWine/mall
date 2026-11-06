@@ -3,6 +3,7 @@ package com.dking.shop.service.impl;
 import com.dking.shop.entity.SeckillActivity;
 import com.dking.shop.exception.ServiceUnavailableException;
 import com.dking.shop.mapper.SeckillActivityMapper;
+import com.dking.shop.service.SeckillBucketStockService;
 import com.dking.shop.service.SeckillStockService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,9 @@ public class SeckillStockServiceImpl implements SeckillStockService {
 
     @Resource
     private SeckillActivityMapper seckillActivityMapper;
+
+    @Resource
+    private SeckillBucketStockService bucketStockService;
 
     @Value("${shop.seckill.redis.prefix:doro:seckill}")
     private String keyPrefix;
@@ -101,9 +105,11 @@ public class SeckillStockServiceImpl implements SeckillStockService {
             return;
         }
         try {
+            bucketStockService.ensure(fresh);
+            int stock = bucketStockService.totalAvailable(fresh.getId());
             redis.opsForValue().setIfAbsent(
                     stockKey(fresh.getId()),
-                    String.valueOf(fresh.getAvailableStock()),
+                    String.valueOf(stock),
                     Duration.ofSeconds(ttlSeconds(fresh.getEndTime())));
         } catch (DataAccessException e) {
             throw unavailable();

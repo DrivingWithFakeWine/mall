@@ -12,7 +12,7 @@ import com.dking.shop.entity.OrderItem;
 import com.dking.shop.entity.ProductSku;
 import com.dking.shop.entity.ProductSpu;
 import com.dking.shop.entity.ProductStock;
-import com.dking.shop.entity.SeckillActivity;
+import com.dking.shop.service.SeckillBucketStockService;
 import com.dking.shop.entity.UserAddress;
 import com.dking.shop.exception.BusinessException;
 import com.dking.shop.exception.NotFoundException;
@@ -97,7 +97,7 @@ public class OrderServiceImpl implements OrderService {
     private OrderAddressMapper orderAddressMapper;
 
     @Resource
-    private SeckillActivityMapper seckillActivityMapper;
+    private SeckillBucketStockService bucketStockService;
 
     @Resource
     private SeckillStockService seckillStockService;
@@ -669,18 +669,15 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    /** 秒杀订单取消：可用库存 +n，且不突破活动总库存 */
+    /** 秒杀订单取消：回补到下单时使用的桶，不突破该桶总量 */
     private void restoreActivityStock(Order order) {
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
         int quantity = items.stream().mapToInt(OrderItem::getQuantity).sum();
 
-        int updated = seckillActivityMapper.update(null,
-                new LambdaUpdateWrapper<SeckillActivity>()
-                        .eq(SeckillActivity::getId, order.getActivityId())
-                        .apply("available_stock + {0} <= total_stock", quantity)
-                        .setSql("available_stock = available_stock + " + quantity));
-        if (updated == 0) {
+        boolean restored = bucketStockService.restore(
+                order.getActivityId(), order.getStockBucket(), quantity);
+        if (!restored) {
             throw new BusinessException("活动库存数据异常，请联系客服");
         }
 

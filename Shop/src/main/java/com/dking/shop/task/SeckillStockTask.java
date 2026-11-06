@@ -3,6 +3,7 @@ package com.dking.shop.task;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dking.shop.entity.SeckillActivity;
 import com.dking.shop.mapper.SeckillActivityMapper;
+import com.dking.shop.service.SeckillBucketStockService;
 import com.dking.shop.service.SeckillStockService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,9 @@ public class SeckillStockTask {
     @Resource
     private SeckillStockService seckillStockService;
 
+    @Resource
+    private SeckillBucketStockService bucketStockService;
+
     @Scheduled(fixedDelayString = "${shop.seckill.redis.reconcile-interval-ms:300000}",
             initialDelayString = "${shop.seckill.redis.reconcile-initial-delay-ms:30000}")
     public void reconcile() {
@@ -48,16 +52,20 @@ public class SeckillStockTask {
         int mismatched = 0;
         for (SeckillActivity activity : activities) {
             try {
+                bucketStockService.ensure(activity);
+                int dbStock = bucketStockService.totalAvailable(activity.getId());
                 Integer before = seckillStockService.currentStock(activity.getId());
                 seckillStockService.initialize(activity);
+                // 活动行的 available_stock 只是展示缓存，用桶汇总刷新
+                bucketStockService.refreshActivityStock(activity.getId());
                 if (before == null) {
                     initialized++;
                     continue;
                 }
-                if (!before.equals(activity.getAvailableStock())) {
+                if (!before.equals(dbStock)) {
                     mismatched++;
                     log.warn("秒杀库存与 DB 不一致, activityId={}, redis={}, db={}",
-                            activity.getId(), before, activity.getAvailableStock());
+                            activity.getId(), before, dbStock);
                 }
             } catch (RuntimeException e) {
                 log.warn("秒杀库存对账跳过, activityId={}, reason={}", activity.getId(), e.getMessage());

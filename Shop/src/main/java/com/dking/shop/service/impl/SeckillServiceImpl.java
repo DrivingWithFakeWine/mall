@@ -24,6 +24,7 @@ import com.dking.shop.mapper.ProductSkuMapper;
 import com.dking.shop.mapper.ProductSpuMapper;
 import com.dking.shop.mapper.SeckillActivityMapper;
 import com.dking.shop.mapper.UserAddressMapper;
+import com.dking.shop.service.SeckillBucketStockService;
 import com.dking.shop.service.SeckillOrderPublisher;
 import com.dking.shop.service.SeckillService;
 import com.dking.shop.service.SeckillStockService;
@@ -105,6 +106,9 @@ public class SeckillServiceImpl implements SeckillService {
     private SeckillOrderResultStore orderResultStore;
 
     @Resource
+    private SeckillBucketStockService bucketStockService;
+
+    @Resource
     private ObjectProvider<SeckillOrderPublisher> orderPublisherProvider;
 
     @Value("${shop.seckill.async.enabled:false}")
@@ -147,8 +151,10 @@ public class SeckillServiceImpl implements SeckillService {
 
         Map<Long, ProductSpu> spuMap = loadSpus(result.getRecords());
         Map<Long, ProductSku> skuMap = loadSkus(result.getRecords());
+        Map<Long, Integer> stockMap = bucketStockService.totalAvailable(
+                result.getRecords().stream().map(SeckillActivity::getId).toList());
         pageVO.setRecords(result.getRecords().stream()
-                .map(activity -> toListItem(activity, spuMap, skuMap, now))
+                .map(activity -> toListItem(activity, spuMap, skuMap, now, stockMap))
                 .toList());
 
         log.info("查询秒杀活动列表, page={}, size={}, keyword={}, total={}",
@@ -169,7 +175,7 @@ public class SeckillServiceImpl implements SeckillService {
             if (!ACTIVITY_STATUS_ONLINE.equals(snapshot.status())) {
                 throw new NotFoundException("秒杀活动不存在");
             }
-            int stock = resolveStock(activityId, null);
+            int stock = resolveStock(activityId);
             SeckillActivityDetailVO vo = buildDetail(snapshot, stock, now);
             log.info("查询秒杀活动详情, activityId={}, phase={}, cached=true",
                     activityId, vo.getPhase());
@@ -188,15 +194,15 @@ public class SeckillServiceImpl implements SeckillService {
         SeckillActivitySnapshot snapshot = toSnapshot(activity, spu, sku);
         seckillActivityCache.put(snapshot);
 
-        int stock = resolveStock(activityId, activity.getAvailableStock());
+        int stock = resolveStock(activityId);
         SeckillActivityDetailVO vo = buildDetail(snapshot, stock, now);
         log.info("查询秒杀活动详情, activityId={}, phase={}, cached=false",
                 activityId, vo.getPhase());
         return vo;
     }
 
-    /** 库存优先读 Redis；Redis 不可用或 key 缺失时回退 DB，详情接口不因缓存故障失败。 */
-    private int resolveStock(Long activityId, Integer dbFallback) {
+    /** 库存优先读 Redis；Redis 不可用或 key 缺失时回退桶汇总，详情接口不因缓存故障失败。 */
+    private int resolveStock(Long activityId) {
         try {
             Integer redisStock = seckillStockService.currentStock(activityId);
             if (redisStock != null) {
@@ -205,14 +211,13 @@ public class SeckillServiceImpl implements SeckillService {
         } catch (RuntimeException e) {
             log.warn("读取 Redis 活动库存失败, activityId={}", activityId, e);
         }
-        if (dbFallback != null) {
-            return dbFallback;
-        }
         SeckillActivity latest = seckillActivityMapper.selectById(activityId);
-        if (latest == null || !ACTIVITY_STATUS_ONLINE.equals(latest.getStatus())) {
-            throw new NotFoundException("秒杀活动不存在");
+        if (latest == null) {
+            return 0;
         }
-        return latest.getAvailableStock();
+        // 首次读取时桶可能还没建，先确保再汇总
+        bucketStockService.ensure(latest);
+        return bucketStockService.totalAvailable(activityId);
     }
 
     private SeckillActivityDetailVO buildDetail(SeckillActivitySnapshot snapshot,
@@ -263,6 +268,7 @@ public class SeckillServiceImpl implements SeckillService {
         // 同步路径：事务外完成参数校验与 Redis 预扣，输家不占用 DB 连接
         UserAddress address = loadAddress(userId, dto.getAddressId());
         SeckillActivity activity = loadOnlineActivity(activityId);
+        bucketStockService.ensure(activity);
         reserveOrThrow(activity, userId);
         String token = IdWorker.getIdStr();
 
@@ -289,6 +295,7 @@ public class SeckillServiceImpl implements SeckillService {
         }
         // 异步路径：热路径只做活动校验 + Redis 预扣 + 入队，地址与商品交给消费者
         SeckillActivity activity = loadOnlineActivity(activityId);
+        bucketStockService.ensure(activity);
         reserveOrThrow(activity, userId);
 
         String token = IdWorker.getIdStr();
@@ -367,6 +374,7 @@ public class SeckillServiceImpl implements SeckillService {
         try {
             UserAddress address = loadAddress(userId, message.addressId());
             SeckillActivity activity = loadOnlineActivity(activityId);
+            bucketStockService.ensure(activity);
             OrderSubmitVO order = transactionTemplate.execute(status ->
                     doSubmit(userId, activity, address, dto, message.token()));
             orderResultStore.markSuccess(message.token(), userId, order);
@@ -435,16 +443,10 @@ public class SeckillServiceImpl implements SeckillService {
             throw new BusinessException("商品已下架");
         }
 
-        // 原子扣活动库存：数量固定 1，售罄/活动状态变化都会影响 0 行
+        // 扣活动库存：拆成 N 个桶，状态/时间在同一条 SQL 里校验，避免热点回到活动单行
         LocalDateTime now = LocalDateTime.now();
-        int rows = seckillActivityMapper.update(null, new LambdaUpdateWrapper<SeckillActivity>()
-                .eq(SeckillActivity::getId, activityId)
-                .eq(SeckillActivity::getStatus, ACTIVITY_STATUS_ONLINE)
-                .le(SeckillActivity::getStartTime, now)
-                .gt(SeckillActivity::getEndTime, now)
-                .ge(SeckillActivity::getAvailableStock, 1)
-                .setSql("available_stock = available_stock - 1"));
-        if (rows == 0) {
+        int bucketNo = bucketStockService.deduct(activityId, userId);
+        if (bucketNo < 0) {
             SeckillActivity latest = seckillActivityMapper.selectById(activityId);
             if (latest == null || !ACTIVITY_STATUS_ONLINE.equals(latest.getStatus())) {
                 throw new BusinessException("秒杀活动不存在");
@@ -455,10 +457,7 @@ public class SeckillServiceImpl implements SeckillService {
             if (!now.isBefore(latest.getEndTime())) {
                 throw new BusinessException("活动已结束");
             }
-            if (latest.getAvailableStock() != null && latest.getAvailableStock() <= 0) {
-                throw new SeckillSoldOutException();
-            }
-            throw new BusinessException("活动商品已售罄");
+            throw new SeckillSoldOutException();
         }
 
         // 生成订单：复用 orders，activity_id 标记来源
@@ -471,6 +470,7 @@ public class SeckillServiceImpl implements SeckillService {
         order.setMerchantId(SINGLE_MERCHANT_ID);
         order.setActivityId(activityId);
         order.setOrderToken(orderToken);
+        order.setStockBucket(bucketNo);
         order.setTotalAmount(amount);
         order.setPayAmount(amount);
         order.setStatus(ORDER_STATUS_WAIT_PAY);
@@ -548,10 +548,12 @@ public class SeckillServiceImpl implements SeckillService {
     private SeckillActivityListItemVO toListItem(SeckillActivity activity,
                                                  Map<Long, ProductSpu> spuMap,
                                                  Map<Long, ProductSku> skuMap,
-                                                 LocalDateTime now) {
+                                                 LocalDateTime now,
+                                                 Map<Long, Integer> stockMap) {
         SeckillActivityListItemVO vo = new SeckillActivityListItemVO();
         fillItemFields(vo, activity,
-                spuMap.get(activity.getSpuId()), skuMap.get(activity.getSkuId()), now);
+                spuMap.get(activity.getSpuId()), skuMap.get(activity.getSkuId()), now,
+                stockMap.getOrDefault(activity.getId(), activity.getAvailableStock()));
         return vo;
     }
 
@@ -559,7 +561,8 @@ public class SeckillServiceImpl implements SeckillService {
                                 SeckillActivity activity,
                                 ProductSpu spu,
                                 ProductSku sku,
-                                LocalDateTime now) {
+                                LocalDateTime now,
+                                int availableStock) {
         vo.setId(activity.getId());
         vo.setSpuId(activity.getSpuId());
         vo.setSkuId(activity.getSkuId());
@@ -572,15 +575,10 @@ public class SeckillServiceImpl implements SeckillService {
         vo.setSeckillPrice(activity.getSeckillPrice());
         vo.setOriginalPrice(sku != null ? sku.getPrice() : null);
         vo.setTotalStock(activity.getTotalStock());
-        vo.setAvailableStock(activity.getAvailableStock());
+        vo.setAvailableStock(availableStock);
         vo.setStartTime(activity.getStartTime());
         vo.setEndTime(activity.getEndTime());
-        vo.setPhase(phaseOf(activity, now));
-    }
-
-    private int phaseOf(SeckillActivity activity, LocalDateTime now) {
-        return phaseOf(activity.getStartTime(), activity.getEndTime(),
-                activity.getAvailableStock(), now);
+        vo.setPhase(phaseOf(activity.getStartTime(), activity.getEndTime(), availableStock, now));
     }
 
     private int phaseOf(LocalDateTime startTime, LocalDateTime endTime,

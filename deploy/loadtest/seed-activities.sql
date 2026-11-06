@@ -2,6 +2,10 @@
 -- 用法：mysql -h <RDS> -u <user> -p doro_mall < seed-activities.sql
 -- 活动 id 固定在 3900000000000000001 ~ 3900000000000000009，重复执行会重置库存和时间窗。
 -- 每个场景用不同活动 id，避免 Redis 闸门状态与 uk_activity_user 影响下一轮。
+-- 库存桶在这里删掉，由应用按新的 available_stock 重新初始化。
+
+DELETE FROM seckill_stock_bucket
+WHERE activity_id BETWEEN 3900000000000000001 AND 3900000000000000009;
 
 SET @spu_id = (SELECT id FROM product_spu WHERE status = 1 AND deleted = 0 ORDER BY id LIMIT 1);
 SET @sku_id = (SELECT id FROM product_sku WHERE spu_id = @spu_id AND status = 1 AND deleted = 0 ORDER BY id LIMIT 1);

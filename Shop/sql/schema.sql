@@ -157,6 +157,7 @@ CREATE TABLE `orders` (
   `merchant_id`   BIGINT        NOT NULL DEFAULT 0 COMMENT '商家id（单商家阶段固定0，多商家时用于拆单）',
   `activity_id`   BIGINT        DEFAULT NULL COMMENT '秒杀活动id（普通订单为 NULL）',
   `order_token`   VARCHAR(32)   DEFAULT NULL COMMENT '秒杀异步下单令牌（结果查询/消息幂等）',
+  `stock_bucket`  TINYINT       DEFAULT NULL COMMENT '秒杀下单命中的库存桶号（取消按桶回补）',
   `total_amount`  DECIMAL(10,2) NOT NULL COMMENT '订单总额（快照）',
   `pay_amount`    DECIMAL(10,2) NOT NULL COMMENT '应付金额',
   `status`        TINYINT       NOT NULL DEFAULT 0 COMMENT '0待支付 1已支付 2已发货 3已完成 4已取消',
@@ -233,7 +234,7 @@ CREATE TABLE `seckill_activity` (
   `name`            VARCHAR(100)  NOT NULL COMMENT '活动名称（展示用）',
   `seckill_price`   DECIMAL(10,2) NOT NULL COMMENT '秒杀价',
   `total_stock`     INT           NOT NULL COMMENT '活动总库存',
-  `available_stock` INT           NOT NULL COMMENT '可用库存（条件更新扣减）',
+  `available_stock` INT           NOT NULL COMMENT '可用库存（展示缓存，真实库存见 seckill_stock_bucket 汇总）',
   `per_user_limit`  INT           NOT NULL DEFAULT 1 COMMENT '每人限购数量（MVP 固定 1）',
   `start_time`      DATETIME      NOT NULL COMMENT '活动开始时间',
   `end_time`        DATETIME      NOT NULL COMMENT '活动结束时间',
@@ -245,3 +246,11 @@ CREATE TABLE `seckill_activity` (
   KEY `idx_status_time` (`status`, `start_time`, `end_time`),
   KEY `idx_sku` (`sku_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀活动';
+
+CREATE TABLE `seckill_stock_bucket` (
+  `activity_id`     BIGINT  NOT NULL COMMENT '秒杀活动id',
+  `bucket_no`       TINYINT NOT NULL COMMENT '桶号 0..N-1',
+  `total_stock`     INT     NOT NULL COMMENT '该桶总库存（回补上限）',
+  `available_stock` INT     NOT NULL COMMENT '该桶可售库存',
+  PRIMARY KEY (`activity_id`, `bucket_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀库存桶（各桶之和为活动可售库存）';

@@ -30,6 +30,9 @@ public class Order {
     /** 秒杀异步下单令牌，用于结果查询与消息重投幂等 */
     private String orderToken;
 
+    /** 下单时命中的库存桶号，取消/超时按桶回补 */
+    private Integer stockBucket;
+
     private BigDecimal totalAmount;
     private BigDecimal payAmount;
 

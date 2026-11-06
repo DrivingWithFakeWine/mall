@@ -69,6 +69,9 @@ shop:
       dead-letter-exchange: doroshop.seckill.dlx
       dead-letter-queue: doroshop.seckill.order.dlq
       result-ttl-seconds: 1800
+    bucket:
+      # 库存分桶数：活动库存拆成 N 行，降低单行锁竞争
+      size: ${SHOP_SECKILL_BUCKET_SIZE:8}
 
 mybatis-plus:
   configuration:
