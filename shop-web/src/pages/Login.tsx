@@ -1,8 +1,11 @@
 import AuthLayout from '../components/AuthLayout'
 import {useState} from 'react'
-import {Button,Form,Input,message} from 'antd'
+import {Button,Form,Input,Typography,message} from 'antd'
 import {loginApi, type LoginParams} from '../api/user.ts'
 import {Link, useNavigate} from 'react-router-dom'
+
+// 演示账号：仅用于简历 Demo 展示，正式环境请删除本段并移除 Form 上的 initialValues
+const DEMO_ACCOUNT = { username: 'demo', password: 'demo123' }
 
 export default function Login() {
     const [loading, setLoading] = useState(false)
@@ -28,6 +31,7 @@ export default function Login() {
                 layout="vertical"
                 onFinish={handleFinsh}
                 autoComplete="off"
+                initialValues={DEMO_ACCOUNT}
             >
                 <Form.Item
                 label="用户名"
@@ -48,6 +52,12 @@ export default function Login() {
                         登录
                     </Button>
                     <Link to="/register">去注册</Link>
+                    <Typography.Text
+                        type="secondary"
+                        style={{ display: 'block', marginTop: 12, fontSize: 12, lineHeight: '18px' }}
+                    >
+                        演示账号 {DEMO_ACCOUNT.username} / {DEMO_ACCOUNT.password} 已自动填入，直接点「登录」即可
+                    </Typography.Text>
                 </Form.Item>
             </Form>
         </AuthLayout>
