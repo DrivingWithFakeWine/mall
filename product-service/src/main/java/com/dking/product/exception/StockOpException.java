@@ -1,14 +1,21 @@
 package com.dking.product.exception;
 
 /**
- * 库存操作被拒绝（库存不足、数量冲突等）。
+ * 库存操作被拒绝（库存不足、状态非法等）。
  *
- * <p>内部接口把它映射成 HTTP 409，让调用方用状态码就能区分
- * 「业务拒绝，别重试」和「网络/系统故障，可以重试」。</p>
+ * <p>内部接口把它映射成 HTTP 409 + {@code {"code":"INSUFFICIENT_STOCK","message":"..."}}，
+ * 调用方用 {@code code} 做分支，用状态码判断"该不该重试"。</p>
  */
 public class StockOpException extends RuntimeException {
 
-    public StockOpException(String message) {
+    private final StockErrorCode code;
+
+    public StockOpException(StockErrorCode code, String message) {
         super(message);
+        this.code = code;
+    }
+
+    public StockErrorCode code() {
+        return code;
     }
 }

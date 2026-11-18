@@ -1,6 +1,7 @@
 package com.dking.product.controller;
 
 import com.dking.product.common.Result;
+import com.dking.product.dto.StockErrorResponse;
 import com.dking.product.dto.StockOpRequest;
 import com.dking.product.dto.StockOpResult;
 import com.dking.product.exception.StockOpException;
@@ -19,15 +20,15 @@ import java.util.function.Supplier;
 /**
  * 库存写操作（内部 RPC）。
  *
- * <p><b>状态码约定</b>（和 C 端接口的「HTTP 200 + Result.code」不同）：</p>
+ * <p><b>成功</b>：HTTP 200 + {@code {"code":200,"data":{...}}}</p>
+ *
+ * <p><b>业务拒绝</b>：HTTP 409 + {@code {"code":"INSUFFICIENT_STOCK","message":"..."}}</p>
  * <ul>
- *   <li>200 —— 成功，包括幂等重试（skipped &gt; 0）</li>
- *   <li>409 —— 业务拒绝：库存不足、数量冲突、SKU 不存在。**不要重试**</li>
- *   <li>5xx —— 系统故障。**可以重试**，幂等键保证不重复扣</li>
+ *   <li>状态码告诉调用方「不要重试」</li>
+ *   <li>字符串 code 告诉调用方「具体为什么」，**不要匹配 message**</li>
  * </ul>
  *
- * <p>跨进程调用必须让调用方靠状态码就能判断「该不该重试」，
- * 否则每次都要解析响应体里的 code，很容易写成无脑重试。</p>
+ * <p><b>系统故障</b>：5xx。可以重试，幂等键保证不重复扣。</p>
  */
 @RestController
 @RequestMapping("/internal/product/stock")
@@ -42,32 +43,32 @@ public class InternalStockController {
     }
 
     @PostMapping("/reserve")
-    public ResponseEntity<Result<StockOpResult>> reserve(@RequestBody StockOpRequest request) {
+    public ResponseEntity<?> reserve(@RequestBody StockOpRequest request) {
         return execute(() -> stockCommandService.reserve(request));
     }
 
     @PostMapping("/release")
-    public ResponseEntity<Result<StockOpResult>> release(@RequestBody StockOpRequest request) {
+    public ResponseEntity<?> release(@RequestBody StockOpRequest request) {
         return execute(() -> stockCommandService.release(request));
     }
 
     @PostMapping("/confirm")
-    public ResponseEntity<Result<StockOpResult>> confirm(@RequestBody StockOpRequest request) {
+    public ResponseEntity<?> confirm(@RequestBody StockOpRequest request) {
         return execute(() -> stockCommandService.confirm(request));
     }
 
     @PostMapping("/sales")
-    public ResponseEntity<Result<StockOpResult>> sales(@RequestBody StockOpRequest request) {
+    public ResponseEntity<?> sales(@RequestBody StockOpRequest request) {
         return execute(() -> stockCommandService.sales(request));
     }
 
-    private ResponseEntity<Result<StockOpResult>> execute(Supplier<StockOpResult> action) {
+    private ResponseEntity<?> execute(Supplier<StockOpResult> action) {
         try {
             return ResponseEntity.ok(Result.success(action.get()));
         } catch (StockOpException e) {
-            log.warn("库存操作被拒绝: {}", e.getMessage());
+            log.warn("库存操作被拒绝, code={}, message={}", e.code(), e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Result.error(HttpStatus.CONFLICT.value(), e.getMessage()));
+                    .body(new StockErrorResponse(e.code().name(), e.getMessage()));
         }
     }
 }
