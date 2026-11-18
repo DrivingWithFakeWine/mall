@@ -16,8 +16,13 @@ public interface StockOpLogMapper extends BaseMapper<StockOpLog> {
      * @return 1 = 本次插入（需要执行库存变更）；0 = 已存在（跳过）
      */
     @Insert("""
-            INSERT INTO stock_op_log (id, order_no, sku_id, op, quantity, create_time)
-            VALUES (#{log.id}, #{log.orderNo}, #{log.skuId}, #{log.op}, #{log.quantity}, #{log.createTime})
+            INSERT INTO stock_op_log
+                (id, order_no, sku_id, op, quantity,
+                 available_before, available_after, locked_before, locked_after, create_time)
+            VALUES
+                (#{log.id}, #{log.orderNo}, #{log.skuId}, #{log.op}, #{log.quantity},
+                 #{log.availableBefore}, #{log.availableAfter}, #{log.lockedBefore}, #{log.lockedAfter},
+                 #{log.createTime})
             ON DUPLICATE KEY UPDATE id = id
             """)
     int insertIfAbsent(@Param("log") StockOpLog log);
