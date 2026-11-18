@@ -1,10 +1,10 @@
-package com.dking.shop.controller;
+package com.dking.product.controller;
 
-import com.dking.shop.common.Result;
-import com.dking.shop.service.ProductService;
-import com.dking.shop.vo.PageVO;
-import com.dking.shop.vo.ProductDetailVO;
-import com.dking.shop.vo.ProductListItemVO;
+import com.dking.product.common.Result;
+import com.dking.product.service.ProductService;
+import com.dking.product.vo.PageVO;
+import com.dking.product.vo.ProductDetailVO;
+import com.dking.product.vo.ProductListItemVO;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

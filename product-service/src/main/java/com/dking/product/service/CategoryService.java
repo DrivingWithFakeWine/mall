@@ -1,6 +1,6 @@
-package com.dking.shop.service;
+package com.dking.product.service;
 
-import com.dking.shop.vo.CategoryVO;
+import com.dking.product.vo.CategoryVO;
 
 import java.util.List;
 

@@ -50,3 +50,6 @@ Shop/*.log
 
 product-service/target/
 product-service/*.log
+
+# 各模块本地数据库配置（含密码），统一忽略
+**/application-local.yaml

@@ -1,10 +1,10 @@
-package com.dking.shop.service.impl;
+package com.dking.product.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.dking.shop.entity.Category;
-import com.dking.shop.mapper.CategoryMapper;
-import com.dking.shop.service.CategoryService;
-import com.dking.shop.vo.CategoryVO;
+import com.dking.product.entity.Category;
+import com.dking.product.mapper.CategoryMapper;
+import com.dking.product.service.CategoryService;
+import com.dking.product.vo.CategoryVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

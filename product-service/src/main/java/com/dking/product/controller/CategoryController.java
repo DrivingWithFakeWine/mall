@@ -1,8 +1,8 @@
-package com.dking.shop.controller;
+package com.dking.product.controller;
 
-import com.dking.shop.common.Result;
-import com.dking.shop.service.CategoryService;
-import com.dking.shop.vo.CategoryVO;
+import com.dking.product.common.Result;
+import com.dking.product.service.CategoryService;
+import com.dking.product.vo.CategoryVO;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

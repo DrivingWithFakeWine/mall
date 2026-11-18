@@ -1,12 +1,12 @@
-package com.dking.shop.service;
+package com.dking.product.service;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.dking.shop.entity.Category;
-import com.dking.shop.entity.ProductSpu;
-import com.dking.shop.mapper.CategoryMapper;
-import com.dking.shop.mapper.ProductSpuMapper;
-import com.dking.shop.vo.PageVO;
-import com.dking.shop.vo.ProductListItemVO;
+import com.dking.product.entity.Category;
+import com.dking.product.entity.ProductSpu;
+import com.dking.product.mapper.CategoryMapper;
+import com.dking.product.mapper.ProductSpuMapper;
+import com.dking.product.vo.PageVO;
+import com.dking.product.vo.ProductListItemVO;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
