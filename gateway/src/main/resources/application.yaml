@@ -1,0 +1,115 @@
+server:
+  port: ${GATEWAY_PORT:9000}
+
+spring:
+  application:
+    name: shop-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # 限流是入口动作，Redis 慢不能拖垮网关：超时设短，失败立刻降级
+      timeout: 200ms
+      connect-timeout: 200ms
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          # 注意：Spring Cloud 5.x 的前缀是 gateway.server.webmvc.routes，
+          # 网上大量教程写的 gateway.routes 在这个版本不生效。
+          routes:
+            # 单体阶段：所有业务前缀都打到 shop-backend（当前是单体）。
+            # 拆服务时只改 uri：lb://shop-product / lb://shop-trade ...
+            - id: shop-user
+              uri: ${SHOP_BACKEND_URI:http://localhost:8080}
+              predicates:
+                - Path=/user/**,/address/**
+
+            - id: shop-product
+              uri: ${PRODUCT_SERVICE_URI:http://localhost:8081}
+              predicates:
+                - Path=/product/**,/category/**
+
+            - id: shop-trade
+              uri: ${SHOP_BACKEND_URI:http://localhost:8080}
+              predicates:
+                - Path=/cart/**,/order/**
+
+            - id: shop-marketing
+              uri: ${SHOP_BACKEND_URI:http://localhost:8080}
+              predicates:
+                - Path=/seckill/**
+
+          # 下游连接超时：比业务接口的慢查询略短，避免网关线程被挂住
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+
+app:
+  jwt:
+    # 与用户服务共用同一密钥（HS256）。生产从环境变量注入，绝不写进仓库。
+    secret: ${JWT_SECRET:doroshop-jwt-secret-at-least-32-chars!!}
+  auth:
+    # 必须和后端 SecurityConfig 的 permitAll 保持一致
+    permit:
+      - "POST /user/login"
+      - "POST /user/register"
+      - "GET /product/**"
+      - "GET /category/**"
+      - "GET /seckill/**"
+      - "GET /actuator/**"
+  rate-limit:
+    # 总开关：false = 完全关闭限流（过滤器直接放行，只多一次布尔判断）
+    enabled: true
+    # 每个周期允许的请求数
+    limit-for-period: 20
+    # 周期长度（秒）
+    refill-period-seconds: 60
+    # 桶容量 = 允许的瞬时突发上限，一般等于 limit-for-period
+    capacity: 20
+    # 匿名（无 token）：按 IP 计数。一个 NAT 出口后面可能有几百个用户，配额必须放大
+    anonymous:
+      limit-for-period: 200
+      capacity: 200
+    redis:
+      # Redis 令牌桶开关：true = 多实例共享全局配额；false = 只用本地桶
+      enabled: true
+      key-prefix: doro:rate
+      # 降级探测：用真实 Lua 打 __probe__ key，只判断有没有抛异常
+      probe:
+        # 探测开关。关闭后降级不会自动恢复，仅用于测试/排查
+        enabled: true
+        # 初始探测间隔（秒）
+        interval-seconds: 5
+        # 退避上限（秒）
+        max-interval-seconds: 60
+        # 每次失败间隔翻倍
+        backoff-multiplier: 2
+        # 连续成功多少次才切回 Redis
+        success-threshold: 3
+
+  circuit-breaker:
+    # 熔断总开关
+    enabled: true
+    # 窗口内失败多少次打开（只统计 5xx）
+    failure-threshold: 5
+    # 统计窗口（秒）
+    window-seconds: 10
+    # 打开后多久进入半开（秒），也是降级响应的 Retry-After
+    open-seconds: 20
+    # 半开时允许同时通过的探测请求数
+    half-open-permits: 1
+    # 不参与熔断的路径第一段
+    exclude:
+      - actuator
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
