@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 秒杀库存初始化与对账：只补缺失 key，不覆盖已有值；差异只告警，DB 为最终真相。
+ * 秒杀库存初始化与对账：只补缺失 key，不覆盖已有值；差异只告警，实际值以DB为准。
  */
 @Slf4j
 @Component
