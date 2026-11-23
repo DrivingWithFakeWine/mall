@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/doro_mall_test?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+  data:
+    redis:
+      # 测试库用 DB 1，避免和本地开发数据互相污染
+      database: 1
+  rabbitmq:
+    listener:
+      simple:
+        # 测试不依赖 broker：监听器照常注册但不建连
+        auto-startup: false
