@@ -193,6 +193,7 @@ public class StockCommandService {
                     requireSameQuantity(reserved, item);
                     return Decision.SKIP;
                 }
+                // 防御手段，告警后，交给对账任务.
                 if (released != null || confirmed != null) {
                     throw new StockOpException(StockErrorCode.INVALID_REQUEST,
                             "台账状态异常：存在释放/确认记录但没有预占: skuId=" + item.skuId());
@@ -280,11 +281,11 @@ public class StockCommandService {
         record.setCreateTime(LocalDateTime.now());
 
         if (stock != null && !OP_SALES.equals(op)) {
-            int available = stock.getAvailableStock();
-            int locked = stock.getLockedStock();
-            int quantity = item.quantity();
-            record.setAvailableBefore(available);
-            record.setLockedBefore(locked);
+            int available = stock.getAvailableStock();  // 查商品可用库存
+            int locked = stock.getLockedStock();        // 查商品锁住的库存
+            int quantity = item.quantity();         //
+            record.setAvailableBefore(available);       // 修改前可用的库存
+            record.setLockedBefore(locked);         // 修改前锁住的库存
             switch (op) {
                 case OP_RESERVE -> {
                     record.setAvailableAfter(available - quantity);
