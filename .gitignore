@@ -1,7 +1,9 @@
 # Java / Maven 构建产物
 Shop/target/
+target/
 *.class
 *.log
+*.err
 
 # IDE
 .idea/
