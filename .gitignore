@@ -53,3 +53,9 @@ product-service/*.log
 
 # 各模块本地数据库配置（含密码），统一忽略
 **/application-local.yaml
+
+# 本地运行日志与 DSH 临时目录
+Shop/*.err
+product-service/*.err
+gateway/*.err
+.dsh_tmp/
