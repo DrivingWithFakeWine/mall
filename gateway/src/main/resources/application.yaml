@@ -37,7 +37,7 @@ spring:
                 - Path=/cart/**,/order/**
 
             - id: shop-marketing
-              uri: ${SHOP_BACKEND_URI:http://localhost:8080}
+              uri: ${MARKETING_SERVICE_URI:http://localhost:8082}
               predicates:
                 - Path=/seckill/**
 

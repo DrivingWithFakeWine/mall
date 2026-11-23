@@ -2,6 +2,7 @@ package com.dking.shop.service;
 
 import com.dking.shop.dto.DirectOrderSubmitDTO;
 import com.dking.shop.dto.OrderSubmitDTO;
+import com.dking.shop.dto.SeckillOrderCommand;
 import com.dking.shop.vo.OrderConfirmVO;
 import com.dking.shop.vo.OrderDetailVO;
 import com.dking.shop.vo.OrderListItemVO;
@@ -24,6 +25,14 @@ public interface OrderService {
 
     /** 立即购买：不经过购物车，单 SKU 校验地址与库存后下单 */
     OrderSubmitVO submitDirect(Long userId, DirectOrderSubmitDTO dto);
+
+    /**
+     * 秒杀建单：活动库存由营销域扣减，这里只负责建订单/明细/地址快照。
+     *
+     * <p>拆成独立方法是为了让营销域不用碰订单表。等两个域分成两个服务，
+     * 这里就是 {@code seckill.order.create} 消息的消费入口。</p>
+     */
+    OrderSubmitVO createSeckillOrder(SeckillOrderCommand command);
 
     /** 我的订单列表；status 为空表示全部 */
     PageVO<OrderListItemVO> list(Long userId, int page, int size, Integer status);

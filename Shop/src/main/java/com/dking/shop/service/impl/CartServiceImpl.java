@@ -2,19 +2,15 @@ package com.dking.shop.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.dking.shop.client.ProductClient;
+import com.dking.shop.client.dto.SkuSnapshot;
 import com.dking.shop.dto.CartAddDTO;
 import com.dking.shop.dto.CartQuantityDTO;
 import com.dking.shop.dto.CartSelectDTO;
 import com.dking.shop.entity.Cart;
-import com.dking.shop.entity.ProductSku;
-import com.dking.shop.entity.ProductSpu;
-import com.dking.shop.entity.ProductStock;
 import com.dking.shop.exception.BusinessException;
 import com.dking.shop.exception.NotFoundException;
 import com.dking.shop.mapper.CartMapper;
-import com.dking.shop.mapper.ProductSkuMapper;
-import com.dking.shop.mapper.ProductSpuMapper;
-import com.dking.shop.mapper.ProductStockMapper;
 import com.dking.shop.service.CartService;
 import com.dking.shop.vo.CartItemVO;
 import com.dking.shop.vo.CartListVO;
@@ -29,6 +25,15 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * 购物车。
+ *
+ * <p>2026-11-23 起：商品信息（SKU 状态、价格、图片、可用库存）全部来自商品服务的
+ * {@code /internal/product/skus/batch}，本服务不再直接读 {@code product_*} 表。</p>
+ *
+ * <p>注意：这里的库存校验只是「加购时提示」，**下单时以 reserve 的结果为准**。
+ * 中间有几秒到几小时的窗口，库存随时可能被别人买走。</p>
+ */
 @Slf4j
 @Service
 public class CartServiceImpl implements CartService {
@@ -41,15 +46,10 @@ public class CartServiceImpl implements CartService {
     private CartMapper cartMapper;
 
     @Resource
-    private ProductSkuMapper productSkuMapper;
-
-    @Resource
-    private ProductSpuMapper productSpuMapper;
-
-    @Resource
-    private ProductStockMapper productStockMapper;
+    private ProductClient productClient;
 
     private final Object[] cartLocks = new Object[64];
+
     public CartServiceImpl() {
         for (int i = 0; i < cartLocks.length; i++) {
             cartLocks[i] = new Object();
@@ -60,24 +60,14 @@ public class CartServiceImpl implements CartService {
         return cartLocks[Math.floorMod(userId.hashCode(), cartLocks.length)];
     }
 
-
     @Override
     public void add(Long userId, CartAddDTO dto) {
-        ProductSku sku = productSkuMapper.selectById(dto.getSkuId());
-        if (sku == null || !SKU_STATUS_ON.equals(sku.getStatus())) {
+        SkuSnapshot sku = loadSku(dto.getSkuId());
+        // SKU 上架不代表 SPU 上架，两层都要校验（快照里都带着）
+        if (!isSellable(sku)) {
             throw new BusinessException("商品已下架");
         }
-
-        // SKU 上架不代表 SPU 上架，两层都要校验
-        ProductSpu spu = productSpuMapper.selectById(sku.getSpuId());
-        if (spu == null || !SPU_STATUS_ON.equals(spu.getStatus())) {
-            throw new BusinessException("商品已下架");
-        }
-
-        ProductStock stock = productStockMapper.selectOne(
-                new LambdaQueryWrapper<ProductStock>()
-                        .eq(ProductStock::getSkuId, dto.getSkuId()));
-        int available = stock == null ? 0 : stock.getAvailableStock();
+        int available = sku.availableStock();
 
         int targetQuantity;
         synchronized (lockOf(userId)) {
@@ -116,7 +106,6 @@ public class CartServiceImpl implements CartService {
             }
         }
 
-
         log.info("加入购物车, userId={}, skuId={}, quantity={}, target={}",
                 userId, dto.getSkuId(), dto.getQuantity(), targetQuantity);
     }
@@ -134,26 +123,11 @@ public class CartServiceImpl implements CartService {
             return result;
         }
 
-        List<Long> skuIds = carts.stream().map(Cart::getSkuId).distinct().toList();
-        Map<Long, ProductSku> skuMap = productSkuMapper.selectBatchIds(skuIds).stream()
-                .collect(Collectors.toMap(ProductSku::getId, Function.identity()));
-
-        List<Long> spuIds = skuMap.values().stream()
-                .map(ProductSku::getSpuId)
-                .distinct()
-                .toList();
-        Map<Long, ProductSpu> spuMap = spuIds.isEmpty()
-                ? Map.of()
-                : productSpuMapper.selectBatchIds(spuIds).stream()
-                        .collect(Collectors.toMap(ProductSpu::getId, Function.identity()));
-
-        Map<Long, ProductStock> stockMap = productStockMapper.selectList(
-                        new LambdaQueryWrapper<ProductStock>().in(ProductStock::getSkuId, skuIds))
-                .stream()
-                .collect(Collectors.toMap(ProductStock::getSkuId, Function.identity()));
+        Map<Long, SkuSnapshot> skuMap = loadSkuMap(
+                carts.stream().map(Cart::getSkuId).distinct().toList());
 
         List<CartItemVO> items = carts.stream()
-                .map(cart -> toItemVO(cart, skuMap, spuMap, stockMap))
+                .map(cart -> toItemVO(cart, skuMap))
                 .toList();
         result.setItems(items);
 
@@ -173,10 +147,8 @@ public class CartServiceImpl implements CartService {
                 throw new NotFoundException("购物车项不存在");
             }
 
-            ProductStock stock = productStockMapper.selectOne(
-                    new LambdaQueryWrapper<ProductStock>()
-                            .eq(ProductStock::getSkuId, cart.getSkuId()));
-            int available = stock == null ? 0 : stock.getAvailableStock();
+            SkuSnapshot sku = loadSku(cart.getSkuId());
+            int available = sku == null ? 0 : sku.availableStock();
             if (available < dto.getQuantity()) {
                 throw new BusinessException("库存不足");
             }
@@ -220,32 +192,44 @@ public class CartServiceImpl implements CartService {
         log.info("删除购物车项, userId={}, cartId={}", userId, id);
     }
 
-    private CartItemVO toItemVO(Cart cart,
-                                Map<Long, ProductSku> skuMap,
-                                Map<Long, ProductSpu> spuMap,
-                                Map<Long, ProductStock> stockMap) {
-        ProductSku sku = skuMap.get(cart.getSkuId());
-        ProductSpu spu = sku == null ? null : spuMap.get(sku.getSpuId());
-        ProductStock stock = stockMap.get(cart.getSkuId());
-        int available = stock == null ? 0 : stock.getAvailableStock();
+    // ------------------------------------------------------------------
+    // 商品服务调用
+    // ------------------------------------------------------------------
 
-        boolean invalid = sku == null
-                || !SKU_STATUS_ON.equals(sku.getStatus())
-                || spu == null
-                || !SPU_STATUS_ON.equals(spu.getStatus())
-                || available < cart.getQuantity();
+    private boolean isSellable(SkuSnapshot sku) {
+        return sku != null
+                && SKU_STATUS_ON.equals(sku.skuStatus())
+                && SPU_STATUS_ON.equals(sku.spuStatus());
+    }
+
+    private SkuSnapshot loadSku(Long skuId) {
+        List<SkuSnapshot> list = productClient.batchSkus(List.of(skuId)).getData();
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    private Map<Long, SkuSnapshot> loadSkuMap(List<Long> skuIds) {
+        if (skuIds.isEmpty()) {
+            return Map.of();
+        }
+        return productClient.batchSkus(skuIds).getData().stream()
+                .collect(Collectors.toMap(SkuSnapshot::skuId, Function.identity()));
+    }
+
+    private CartItemVO toItemVO(Cart cart, Map<Long, SkuSnapshot> skuMap) {
+        SkuSnapshot sku = skuMap.get(cart.getSkuId());
+        int available = sku == null ? 0 : sku.availableStock();
+
+        boolean invalid = !isSellable(sku) || available < cart.getQuantity();
 
         CartItemVO vo = new CartItemVO();
         vo.setId(cart.getId());
         vo.setSkuId(cart.getSkuId());
-        vo.setSpuId(sku == null ? null : sku.getSpuId());
-        vo.setName(spu == null ? "商品已失效" : spu.getName());
-        vo.setSpecDesc(sku == null ? "" : sku.getSpecDesc());
+        vo.setSpuId(sku == null ? null : sku.spuId());
+        vo.setName(sku == null ? "商品已失效" : sku.spuName());
+        vo.setSpecDesc(sku == null ? "" : sku.specDesc());
         // 优先 SKU 图，没有则回退到 SPU 主图
-        vo.setImage(sku != null && sku.getImage() != null
-                ? sku.getImage()
-                : (spu == null ? null : spu.getMainImage()));
-        vo.setPrice(sku == null ? BigDecimal.ZERO : sku.getPrice());
+        vo.setImage(sku != null && sku.image() != null ? sku.image() : (sku == null ? null : sku.spuMainImage()));
+        vo.setPrice(sku == null ? BigDecimal.ZERO : sku.price());
         vo.setQuantity(cart.getQuantity());
         vo.setSelected(cart.getSelected());
         vo.setAvailableStock(available);

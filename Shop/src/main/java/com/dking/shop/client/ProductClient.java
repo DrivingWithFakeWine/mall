@@ -5,8 +5,10 @@ import com.dking.shop.client.dto.StockOpRequest;
 import com.dking.shop.client.dto.StockOpResult;
 import com.dking.shop.common.Result;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
@@ -26,6 +28,11 @@ public interface ProductClient {
     /** 批量取 SKU 快照（含库存与 SPU 摘要），缺数据不报错，返回条数可能小于请求条数 */
     @PostMapping("/internal/product/skus/batch")
     Result<List<SkuSnapshot>> batchSkus(@RequestBody List<Long> skuIds);
+
+    /** 关键字 → spuId 列表，给秒杀活动按商品名搜索用 */
+    @GetMapping("/internal/product/search/spu-ids")
+    Result<List<Long>> searchSpuIds(@RequestParam("keyword") String keyword,
+                                    @RequestParam("limit") int limit);
 
     /** 预占：available -n，locked +n。库存不足抛 {@link StockOpRejectedException} */
     @PostMapping("/internal/product/stock/reserve")

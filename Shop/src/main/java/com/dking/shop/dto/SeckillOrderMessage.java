@@ -1,13 +1,18 @@
 package com.dking.shop.dto;
 
 /**
- * 秒杀异步下单消息。热路径只带 id，地址与商品校验由消费者完成。
+ * 秒杀建单消息：营销 → 交易。
+ *
+ * <p>带完整 {@link SeckillOrderCommand}（价格与商品快照都在里面），
+ * 消费方不需要回查活动或商品服务。</p>
+ *
+ * @param token     幂等令牌，同时作为订单的 order_token
+ * @param command   建单命令
+ * @param createdAt 生产时间（毫秒），排查积压用
  */
 public record SeckillOrderMessage(
         String token,
-        Long userId,
-        Long activityId,
-        Long addressId,
-        String remark,
-        long enqueuedAt) {
+        SeckillOrderCommand command,
+        long createdAt
+) {
 }

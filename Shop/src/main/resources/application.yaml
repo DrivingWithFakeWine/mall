@@ -64,7 +64,7 @@ shop:
       activity-cache-jitter-seconds: 10
       activity-cache-missing-ttl-seconds: 10
     async:
-      # 打开后下单只入队并返回 PENDING；关闭时走原有同步事务
+      # 打开后下单只入队并返回 PENDING；关闭时走原有同步事务（拆服务后，没有同步事物）
       enabled: ${SHOP_SECKILL_ASYNC_ENABLED:false}
       exchange: doroshop.seckill
       queue: doroshop.seckill.order

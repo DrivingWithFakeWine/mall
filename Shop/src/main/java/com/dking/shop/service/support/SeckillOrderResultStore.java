@@ -58,6 +58,15 @@ public class SeckillOrderResultStore {
                 null, null, null, null, message));
     }
 
+    /** 删除结果：入队失败时清掉占位，避免前端一直轮询到 PENDING */
+    public void remove(String token) {
+        try {
+            redis.delete(key(token));
+        } catch (RuntimeException e) {
+            log.warn("清理秒杀下单结果失败, token={}", token, e);
+        }
+    }
+
     public StoredResult get(String token) {
         try {
             String value = redis.opsForValue().get(key(token));

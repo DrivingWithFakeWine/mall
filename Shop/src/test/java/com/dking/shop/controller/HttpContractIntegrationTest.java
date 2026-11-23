@@ -76,18 +76,17 @@ class HttpContractIntegrationTest {
                 .andExpect(jsonPath("$.code").value(400));
     }
 
+    /**
+     * 商品/分类接口已迁到 product-service（2026-11-18），单体不再提供这两个路径。
+     * 这里断言 404，是为了把「边界已经挪走」这件事固定在契约测试里；
+     * 对外的「无需 token 可访问」由网关的白名单保证。
+     */
     @Test
-    void productList_withoutToken_shouldBePublic() throws Exception {
+    void productEndpoints_movedToProductService_shouldReturn404() throws Exception {
         mockMvc.perform(get("/product/list"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
-    }
-
-    @Test
-    void categoryTree_withoutToken_shouldBePublic() throws Exception {
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/category/tree"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
+                .andExpect(status().isNotFound());
     }
 
     private String anyUserToken() {

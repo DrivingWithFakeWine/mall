@@ -1,5 +1,6 @@
 package com.dking.shop.mapper;
 
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -34,6 +35,10 @@ public interface SeckillStockBucketMapper {
 
     @Select("SELECT COUNT(*) FROM seckill_stock_bucket WHERE activity_id = #{activityId}")
     int countByActivity(@Param("activityId") Long activityId);
+
+    /** 删除某个活动的全部桶（测试清理用） */
+    @Delete("DELETE FROM seckill_stock_bucket WHERE activity_id = #{activityId}")
+    int deleteByActivity(@Param("activityId") Long activityId);
 
     /**
      * 扣减一个桶。JOIN 活动行做状态/时间校验但不更新它，避免把热点重新拉回单行。

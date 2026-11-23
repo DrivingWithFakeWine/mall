@@ -2,6 +2,7 @@ package com.dking.shop.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dking.shop.client.ProductClient;
 import com.dking.shop.client.StockOpRejectedException;
@@ -12,6 +13,7 @@ import com.dking.shop.client.dto.StockOpResult;
 import com.dking.shop.common.Result;
 import com.dking.shop.dto.DirectOrderSubmitDTO;
 import com.dking.shop.dto.OrderSubmitDTO;
+import com.dking.shop.dto.SeckillOrderCommand;
 import com.dking.shop.entity.Cart;
 import com.dking.shop.entity.Order;
 import com.dking.shop.entity.OrderAddress;
@@ -26,8 +28,6 @@ import com.dking.shop.mapper.OrderItemMapper;
 import com.dking.shop.mapper.OrderMapper;
 import com.dking.shop.mapper.UserAddressMapper;
 import com.dking.shop.service.OrderService;
-import com.dking.shop.service.SeckillBucketStockService;
-import com.dking.shop.service.SeckillStockService;
 import com.dking.shop.vo.ConfirmItemVO;
 import com.dking.shop.vo.OrderAddressVO;
 import com.dking.shop.vo.OrderConfirmVO;
@@ -102,6 +102,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Resource
     private UserAddressMapper userAddressMapper;
+    @Resource
+    private com.dking.shop.service.support.SeckillFeedbackPublisher feedbackPublisher;
+
 
     @Resource
     private OrderMapper orderMapper;
@@ -111,12 +114,6 @@ public class OrderServiceImpl implements OrderService {
 
     @Resource
     private OrderAddressMapper orderAddressMapper;
-
-    @Resource
-    private SeckillBucketStockService bucketStockService;
-
-    @Resource
-    private SeckillStockService seckillStockService;
 
     @Resource
     private ProductClient productClient;
@@ -263,6 +260,63 @@ public class OrderServiceImpl implements OrderService {
             releaseStockWithRetry(orderNo, stockItems, "立即购买建单失败补偿");
             throw e;
         }
+    }
+
+    /**
+     * 秒杀建单：活动库存已在营销域扣减，这里只写订单域自己的三张表。
+     *
+     * <p>拆成两个服务后，这个方法就是 {@code seckill.order.create} 消息的消费入口，
+     * 所以入参是扁平的 {@link SeckillOrderCommand}，不引用任何营销域实体。</p>
+     */
+    @Override
+    public OrderSubmitVO createSeckillOrder(SeckillOrderCommand command) {
+        return transactionTemplate.execute(status -> {
+            UserAddress address = loadAddress(command.userId(), command.addressId());
+            LocalDateTime now = LocalDateTime.now();
+
+            BigDecimal amount = command.price();
+            String orderNo = "SK" + IdWorker.getIdStr();
+
+            Order order = new Order();
+            order.setOrderNo(orderNo);
+            order.setUserId(command.userId());
+            order.setMerchantId(SINGLE_MERCHANT_ID);
+            order.setActivityId(command.activityId());
+            order.setOrderToken(command.orderToken());
+            order.setStockBucket(command.stockBucket());
+            order.setTotalAmount(amount);
+            order.setPayAmount(amount);
+            order.setStatus(ORDER_STATUS_WAIT_PAY);
+            order.setExpireTime(now.plusMinutes(PAY_TIMEOUT_MINUTES));
+            order.setRemark(command.remark());
+            orderMapper.insert(order);
+
+            OrderItem item = new OrderItem();
+            item.setOrderId(order.getId());
+            item.setOrderNo(orderNo);
+            item.setSpuId(command.spuId());
+            item.setSkuId(command.skuId());
+            item.setProductName(command.productName());
+            item.setSpecDesc(command.specDesc());
+            item.setImage(command.image());
+            item.setPrice(amount);
+            item.setQuantity(1);
+            item.setTotalAmount(amount);
+            orderItemMapper.insert(item);
+
+            insertAddressSnapshot(order.getId(), address);
+
+            log.info("秒杀建单成功, userId={}, activityId={}, orderNo={}, payAmount={}",
+                    command.userId(), command.activityId(), orderNo, amount);
+
+            OrderSubmitVO vo = new OrderSubmitVO();
+            vo.setOrderId(order.getId());
+            vo.setOrderNo(orderNo);
+            vo.setPayAmount(amount);
+            vo.setStatus(ORDER_STATUS_WAIT_PAY);
+            vo.setExpireTime(order.getExpireTime());
+            return vo;
+        });
     }
 
     /** 建单事务：只碰订单域自己的表 */
@@ -583,7 +637,7 @@ public class OrderServiceImpl implements OrderService {
         return true;
     }
 
-    /** 按订单来源回滚库存：普通订单归还商品服务，秒杀订单归还活动桶 */
+    /** 按订单来源回滚库存：普通订单归还商品服务，秒杀订单发事件让营销回补活动库存 */
     private void releaseOrderStock(Order order) {
         if (order == null) {
             return;
@@ -592,24 +646,10 @@ public class OrderServiceImpl implements OrderService {
         if (order.getActivityId() == null) {
             releaseStockWithRetry(order.getOrderNo(), items, "取消/超时回补");
         } else {
-            restoreActivityStock(order, items);
-        }
-    }
-
-    /** 秒杀订单取消：回补到下单时使用的桶，不突破该桶总量 */
-    private void restoreActivityStock(Order order, List<StockItem> items) {
-        int quantity = items.stream().mapToInt(StockItem::quantity).sum();
-        try {
-            boolean restored = bucketStockService.restore(order.getActivityId(), order.getStockBucket(), quantity);
-            if (!restored) {
-                log.error("活动库存回补失败，等待对账, orderNo={}, activityId={}, bucket={}",
-                        order.getOrderNo(), order.getActivityId(), order.getStockBucket());
-                return;
-            }
-            // DB 回补成功后再加 Redis；失败只记日志，取消仍以 DB 为准
-            seckillStockService.restoreStock(order.getActivityId(), quantity);
-        } catch (Exception e) {
-            log.error("活动库存回补异常，等待对账, orderNo={}", order.getOrderNo(), e);
+            // 活动桶和 Redis 活动库存归营销域，交易侧只发事件，不做同步调用
+            int quantity = items.stream().mapToInt(StockItem::quantity).sum();
+            feedbackPublisher.orderCancelled(order.getOrderNo(), order.getActivityId(),
+                    order.getStockBucket(), quantity);
         }
     }
 

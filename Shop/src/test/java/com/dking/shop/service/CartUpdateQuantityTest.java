@@ -3,10 +3,14 @@ package com.dking.shop.service;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.dking.shop.dto.CartQuantityDTO;
 import com.dking.shop.entity.Cart;
+import com.dking.shop.entity.ProductSku;
+import com.dking.shop.entity.ProductSpu;
 import com.dking.shop.entity.ProductStock;
 import com.dking.shop.exception.BusinessException;
 import com.dking.shop.exception.NotFoundException;
 import com.dking.shop.mapper.CartMapper;
+import com.dking.shop.mapper.ProductSkuMapper;
+import com.dking.shop.mapper.ProductSpuMapper;
 import com.dking.shop.mapper.ProductStockMapper;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +18,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -39,6 +45,12 @@ class CartUpdateQuantityTest {
     @Resource
     private ProductStockMapper productStockMapper;
 
+    @Resource
+    private ProductSkuMapper productSkuMapper;
+
+    @Resource
+    private ProductSpuMapper productSpuMapper;
+
     private Long userId;
     private Long otherUserId;
     private Long cartId;
@@ -48,7 +60,29 @@ class CartUpdateQuantityTest {
         long base = IdWorker.getId();
         userId = base;
         otherUserId = base + 1;
-        Long skuId = base + 2;
+        Long spuId = base + 2;
+        Long skuId = base + 3;
+
+        // 商品信息现在来自商品服务（测试里是 LocalProductClient），必须有 SPU/SKU 行才能取到快照
+        ProductSpu spu = new ProductSpu();
+        spu.setId(spuId);
+        spu.setCategoryId(0L);
+        spu.setName("测试商品");
+        spu.setCode("T" + spuId);
+        spu.setPriceMin(BigDecimal.TEN);
+        spu.setStatus(1);
+        spu.setSales(0);
+        productSpuMapper.insert(spu);
+
+        ProductSku sku = new ProductSku();
+        sku.setId(skuId);
+        sku.setSpuId(spuId);
+        sku.setSkuCode("S" + skuId);
+        sku.setSpecDesc("默认");
+        sku.setPrice(BigDecimal.TEN);
+        sku.setStatus(1);
+        sku.setSales(0);
+        productSkuMapper.insert(sku);
 
         ProductStock stock = new ProductStock();
         stock.setSkuId(skuId);

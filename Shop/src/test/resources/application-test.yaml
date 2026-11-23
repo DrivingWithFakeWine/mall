@@ -1,29 +1,7 @@
-# 测试专用：连独立的 doro_mall_test，避免污染本地开发库 doro_mall。
-# 测试类用 @ActiveProfiles({"local", "test"})：local 提供账号密码（已 gitignore），
-# 本文件只负责切换库、放大连接池、关闭 SQL 日志。
 spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/doro_mall_test?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    hikari:
-      # 并发测试会同时占用多个连接，默认 10 会让线程排队、削弱复现效果
-      maximum-pool-size: 32
-      minimum-idle: 4
-  data:
-    redis:
-      # 与开发用的 DB 0 隔离
-      database: 1
-
-mybatis-plus:
-  configuration:
-    # 20 线程 × 多条 SQL 的控制台输出会淹没测试结果
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
-
-shop:
-  order:
-    timeout:
-      # 测试中关闭定时扫描，避免后台任务干扰用例；验证逻辑时直接调 OrderService
-      enabled: false
-  seckill:
-    redis:
-      # 测试里由用例显式初始化库存，关闭后台预热/对账
-      task-enabled: false
+  rabbitmq:
+    listener:
+      simple:
+        # 单元/集成测试不依赖 RabbitMQ：消费者照常注册但不建立连接，
+        # 否则每个测试类都要先起一个 broker 才能加载上下文
+        auto-startup: false

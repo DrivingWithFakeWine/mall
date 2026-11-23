@@ -13,6 +13,7 @@ import com.dking.shop.entity.ProductStock;
 import com.dking.shop.mapper.ProductSkuMapper;
 import com.dking.shop.mapper.ProductSpuMapper;
 import com.dking.shop.mapper.ProductStockMapper;
+import com.dking.shop.service.support.ProductSearchSupport;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -47,6 +48,9 @@ public class LocalProductClient implements ProductClient {
 
     @Resource
     private ProductStockMapper stockMapper;
+
+    @Resource
+    private ProductSearchSupport searchSupport;
 
     /**
      * 预占记录：orderNo:skuId → 数量。
@@ -99,6 +103,11 @@ public class LocalProductClient implements ProductClient {
                 })
                 .toList();
         return Result.success(snapshots);
+    }
+
+    @Override
+    public Result<List<Long>> searchSpuIds(String keyword, int limit) {
+        return Result.success(searchSupport.spuIdsByKeyword(keyword, limit));
     }
 
     @Override
