@@ -1,5 +1,6 @@
 package com.dking.shop.exception;
 
+import com.dking.shop.client.StockOpRejectedException;
 import com.dking.shop.common.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +27,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     // 业务异常
     @ExceptionHandler(BusinessException.class)
     public Result<Void> handleBusiness(BusinessException e) {
+        if (e instanceof StockOpRejectedException rejected) {
+            log.error("库存服务拒绝,code={},message={}",rejected.code(), rejected.getMessage());
+        }
         return Result.error(400, e.getMessage());
     }
 

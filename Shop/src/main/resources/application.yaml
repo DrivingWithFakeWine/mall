@@ -41,6 +41,9 @@ app:
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
 shop:
+  product:
+    # 商品服务内部接口地址（订单链路的库存操作走这里）
+    url: ${PRODUCT_SERVICE_URL:http://localhost:8081}
   order:
     timeout:
       # 订单超时取消：每轮扫一批，处理完再等下一轮
