@@ -21,6 +21,10 @@ Redis / RabbitMQ / React 19）。演进原则是**压测驱动**：先用基线�
 | 2026-11-05 | Redis 闸门 + 活动详情缓存 | Lua 预扣（库存 + 用户占位）；详情缓存只存元数据 | 超额认购有效：S4b 冷 p99 **0.66s / 1.01s**；全赢仍打满：S2-500 **98 个 500**、S4c 冷 p99 **5.90s / 6.95s** |
 | 2026-11-06 | RabbitMQ 异步 + 8 桶库存 | 下单入队返回 PENDING；消费者并发 8；库存拆 8 行；活动行降级为展示缓存 | S2/S4c 的 **500 归零**；S4c 冷 p99 **0.71s / 1.20s**；S2-500 受理 6.29s → **1.74s**；S1 仍 **2.24s**（未达 1s） |
 | 2026-11-07 | 文档与展示 | README、自绘架构图、迭代文档整理 | 仓库可对外展示 |
+| 2026-11-17 | 微服务方案 | 拆分方案 v2：4 服务 + 网关的边界、10 处必改调用、3 处硬骨头 | 方案定稿，进入实施 |
+| 2026-11-18 | 商品服务拆分 | 新建 `product-service`（8081），商品域 41 个类迁出；网关路由切换；库存写接口 + 幂等台账 | 单体不再提供商品接口；库存写接口自测通过 |
+| 2026-11-20 | 代码盘点 | 阅读指南：38 个原样搬移 / 3 个改过 / 14 个新写 | 明确「搬迁」与「新设计」的边界 |
+| 2026-11-22 | 订单链路改 RPC | 加 Feign 客户端；下单改 `reserve → 建单 → 失败 release`；支付/取消改 `confirm`/`release` | 21 个订单用例全绿；两进程 E2E 通过 |
 
 ## 三、三轮压测的核心结论
 
@@ -31,29 +35,44 @@ Redis / RabbitMQ / React 19）。演进原则是**压测驱动**：先用基线�
 
 完整数字见 `2026-11-06/loadtest-results.md`，前两轮见仓库 `HANDOFF.md` 第 4.5 节与 `DECISIONS.md` 第 7 节。
 
-## 四、当前状态（2026-11-07）
+## 四、当前状态（2026-11-22）
 
-- 代码：`main` 最新提交 `e0a5a18`；已部署 jar sha256 `f208b014…`（异步 + 分桶版本）
-- 开关：`SHOP_SECKILL_ASYNC_ENABLED=true`；RabbitMQ、Redis 运行中
-- 数据：RDS 中仍保留 2026-11-06 压测订单（活动 001/002/003/004/005/007/008/009），清理方式见 `server-info/servers.md`
-- 压测报告：本地 `loadtest-reports/2026-11-06_1b49547-dirty/`（gitignored）
+- **架构**：从单体演进为「网关 + 商品服务 + 单体（用户/交易/营销）」
+  - `gateway:9000`：Spring Cloud Gateway（WebMVC），JWT 鉴权、Redis+本地限流、三态熔断、traceId
+  - `product-service:8081`：商品域独立进程，对外 `/product/**`、`/category/**`，对内 `/internal/product/**`
+  - `Shop:8080`：用户、购物车、订单、秒杀；订单链路的库存读写已改走 Feign
+- **数据**：三个进程仍连同一个 `doro_mall` 库（过渡状态，schema 未拆）
+- **测试**：共 20 个测试类；本轮验证了订单相关 5 个类 21 个用例（全绿，测试用 `LocalProductClient` 替身，不依赖外部服务）；购物车/秒杀等其余用例未在本轮回归
+- **部署**：线上仍是 2026-11-06 的异步 + 分桶版本 jar，尚未部署本次拆分
 
 ## 五、目录说明
 
 ```
 project-iterations/
-└── 2026-11-06/
-    ├── work-summary.md      本轮做了什么、怎么验证、产物在哪
-    ├── loadtest-plan.md     场景、参数、采样、验收标准
-    └── loadtest-results.md  结果、与 11-05 / 11-04 的对比、结论
+├── 2026-11-06/            秒杀异步 + 分桶
+│   ├── work-summary.md    本轮做了什么、怎么验证、产物在哪
+│   ├── loadtest-plan.md   场景、参数、采样、验收标准
+│   └── loadtest-results.md 结果、与 11-05 / 11-04 的对比、结论
+├── 2026-11-07/            生鲜方向 handoff（已废弃，方向改为微服务）
+├── 2026-11-17/            微服务拆分方案 v2
+│   └── microservice-plan.md
+├── 2026-11-20/            商品服务代码盘点
+│   └── product-service-reading-guide.md
+└── 2026-11-22/            订单链路改 RPC
+    └── work-summary.md
 
 server-info/
-└── servers.md               服务器地址、连接方式、应用端/压测端环境（含真实 IP，已 gitignore）
+└── servers.md             服务器地址、连接方式、应用端/压测端环境（含真实 IP，已 gitignore）
 ```
 
 ## 六、接手后怎么继续
 
 1. 先读仓库根目录 `README.md`、`HANDOFF.md`、`DECISIONS.md`；
-2. 再读最新迭代目录（当前是 `2026-11-06`）；
+2. 再读最新迭代目录（当前是 `2026-11-22`），微服务边界看 `2026-11-17/microservice-plan.md`；
 3. 需要动服务器时读 `server-info/servers.md`，任何重启/替换 jar/写 SQL 前先确认；
-4. 下一步候选：publisher confirm、DLQ 预扣对账、S1 受理延迟优化、微服务拆分。
+4. 下一步候选（按优先级）：
+   - **对账任务**：扫「已取消未 RELEASE」「已支付未 CONFIRM」「预占超时未建单」，是当前最大缺口
+   - 购物车、秒杀改 Feign，然后删除 Shop 里的 `product_*` 实体和 Mapper
+   - 按服务拆 schema，脱离共用 `doro_mall`
+   - 拆分后的压测复测（网关引入后 S0 的 QPS / p99 对比）
+   - publisher confirm、DLQ 预扣对账、S1 受理延迟优化等旧议题

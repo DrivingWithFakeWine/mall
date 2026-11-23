@@ -255,5 +255,75 @@
 - **正确性**：各活动订单数与库存完全吻合（001=10、009=50、002=100、003=300、004=500、008=50、007=10、005=400），无重复用户、无超卖，队列与 DLQ 为 0
 - **产物**：`loadtest-reports/2026-11-06_1b49547-dirty/`（summary.csv + JTL + HTML + MANIFEST）
 
+## 12. 库存预占模型：用操作日志承载幂等与状态（2026-11-21）✅
+
+**背景**：商品域已拆成独立服务（`product-service:8081`），库存写入从进程内方法调用变成跨进程 HTTP 调用。调用一定会重试（超时、网络抖动、上游重试策略），必须同时解决两件事：**重复扣减**和**状态迁移合法性**。
+
+**决策**：用一张 append-only 的操作日志表 `stock_op_log`，同时承载幂等与状态。
+
+- **幂等**：唯一键 `(order_no, sku_id, op)`，重复操作命中已有行直接跳过并返回成功
+- **状态**：由该订单该 SKU 已有的 op 行推导，不在别处维护 status 字段
+- **四个操作**：`RESERVE` / `RELEASE` / `CONFIRM` / `SALES`
+- **状态机**：
+
+  ```
+  (无记录) --RESERVE--> RESERVED --RELEASE--> RELEASED
+                          └--CONFIRM--> CONFIRMED
+  ```
+
+  非法迁移（未预占就释放、已确认再释放、已释放再确认）一律 409 + 错误码，绝不静默改库存。
+
+**备选方案：预占表 + status 字段（更主流，本次未采用）**
+
+```sql
+stock_reservation(order_no, sku_id, quantity, status)
+UNIQUE KEY (order_no, sku_id)
+```
+
+三个动作是三句 `UPDATE ... WHERE status = 1`：状态 O(1) 查询、表不随操作次数增长、扩展部分释放只需加字段。这是国内电商库存中心的常见写法。
+
+**为什么保留操作日志（本次的取舍）**
+
+1. **审计完整**：每一次库存变更都留痕（谁把 `locked_stock` 从 5 改成 2、当时的 `available` 是多少），出问题能复盘到具体某一次操作；预占表只保留最终状态。
+2. **幂等与状态同源**：唯一键天然去重，不需要额外维护一个 status 字段的正确性，也不存在「状态字段和实际操作不一致」的可能。
+3. **当前规模不构成负担**：单机、不分库、订单量小，O(操作次数) 的状态查询（一次批量查询，不是逐条）和表增长都还不痛。
+4. **改造成本低**：预占表本质是同一套状态机的另一种表达，真到瓶颈时换过去只是把 `decide()` 换成三次条件更新，业务契约不变。
+
+**已知代价（接受）**
+
+- 状态查询是 O(操作次数)，每次操作要批量捞该订单相关的 op 行
+- 表按操作增长，一次下单至少 2 行（reserve + confirm），量大了要按 `create_time` 归档或分区
+- 当前只支持「整单整 SKU」的释放/确认，部分释放需要重新设计
+
+**触发重审的条件**（任一出现就换成预占表）
+
+- `stock_op_log` 超过 5000 万行，或状态查询 P99 明显劣化
+- 需要支持部分释放 / 部分确认
+- 「按订单查当前预占量」从排查手段变成高频业务查询
+
+**配套约定**
+
+- `quantity` 恒为正，方向由 `op` 决定；`CHECK (quantity > 0)` 在数据库层兜住
+- `available_before/after`、`locked_before/after` 是**排查线索**：由「操作前一次批量读 + 按 op 推算」得到，并发下是近似值，**不可用于对账**
+- 对账口径：台账 ops + 当前库存 + 业务单据 三者推算
+- 对账任务（未实现）：扫「已取消/超时但没有 RELEASE」和「RESERVED 超时未 CONFIRM」的单
+- 调用契约：交易侧必须 `reserve → 建单 → (失败) release`，顺序错了会直接 409
+
+**验证（2026-11-21，本地）**
+
+- 重复调用幂等：`applied=0, skipped=1`，库存不变
+- 多明细任一库存不足：整单回滚，台账不留记录，先扣的那条也恢复
+- 未预占直接 release / confirm：409 `NOT_RESERVED`（修复了「B 订单释放掉 A 订单锁定库存」的漏洞）
+- 已确认再释放：409 `ALREADY_CONFIRMED`；已释放再确认：409 `ALREADY_RELEASED`
+- 数量与台账不一致：409 `QUANTITY_MISMATCH`
+- 同一请求内重复 `skuId`：先合并再处理，避免第二条被幂等键静默丢弃
+
+**相关文件**
+
+- `product-service/sql/migration_2026-11-18_stock_op_log.sql`
+- `product-service/src/main/java/com/dking/product/service/StockCommandService.java`
+- `product-service/src/main/java/com/dking/product/exception/StockErrorCode.java`
+- 阅读顺序见 `project-iterations/2026-11-20/product-service-reading-guide.md`
+
 
 
